@@ -20,7 +20,7 @@ class IrabSubscribeReminder(_PluginBase):
     plugin_name = "IRAB订阅提醒"
     plugin_desc = "推送当天订阅更新内容。（IRAB 版）"
     plugin_icon = "subscribe_reminder.png"
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "irabsubscribe_reminder_"
@@ -79,8 +79,8 @@ class IrabSubscribeReminder(_PluginBase):
         media_id = getattr(sub, 'media_id', None)
         
         if media_source is not None and media_id is not None:
-            source_str = str(media_source).upper()
-            if 'TMDB' in source_str or source_str == 'TMDB':
+            source_str = str(media_source).lower()
+            if 'tmdb' in source_str or 'themoviedb' in source_str:
                 try:
                     return int(media_id)
                 except (ValueError, TypeError):
