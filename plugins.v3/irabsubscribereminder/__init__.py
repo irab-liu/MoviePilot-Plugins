@@ -16,10 +16,10 @@ from app.schemas import NotificationType, MediaType, MediaSource
 class IrabSubscribeReminder(_PluginBase):
     """IRAB订阅提醒 - 推送当天订阅更新内容。"""
 
-    plugin_name = "IRAB订阅提醒"
+    plugin_name = "订阅提醒v3"
     plugin_desc = "推送当天订阅更新内容。（v3兼容版）"
     plugin_icon = "subscribe_reminder.png"
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "irabsubscribe_reminder_"
