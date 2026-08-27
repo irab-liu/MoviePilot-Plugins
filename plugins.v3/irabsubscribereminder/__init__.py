@@ -1,5 +1,4 @@
 import random
-import threading
 from datetime import datetime
 from typing import Any, List, Dict, Tuple, Optional
 
@@ -114,8 +113,6 @@ class IrabSubscribeReminder(_PluginBase):
         tv_values = ["电视剧", "tv", "TV", "Tv", "series", "Series"]
         if isinstance(t, str) and t.strip() in tv_values:
             return True
-        if hasattr(t, "value") and t.value in tv_values:
-            return True
         return False
 
     def __is_movie(self, sub) -> bool:
@@ -127,8 +124,6 @@ class IrabSubscribeReminder(_PluginBase):
             return True
         movie_values = ["电影", "movie", "MOVIE", "Movie"]
         if isinstance(t, str) and t.strip() in movie_values:
-            return True
-        if hasattr(t, "value") and t.value in movie_values:
             return True
         return False
 
