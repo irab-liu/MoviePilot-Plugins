@@ -17,7 +17,7 @@ class IrabSubscribeReminder(_PluginBase):
     """IRAB订阅提醒 - 推送当天订阅更新内容。"""
 
     plugin_name = "IRAB订阅提醒"
-    plugin_desc = "推送当天订阅更新内容。（IRAB 版）"
+    plugin_desc = "推送当天订阅更新内容。（v3兼容版）"
     plugin_icon = "subscribe_reminder.png"
     plugin_version = "1.0.4"
     plugin_author = "irab"
