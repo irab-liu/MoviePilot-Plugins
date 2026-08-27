@@ -7,6 +7,7 @@
     "icon": "subscribe_reminder.png",
     "author": "thsrite",
     "level": 1,
+    "release": true,
     "system_version": ">=3.0.0",
     "history": {
       "v1.0.0": "适配 MoviePilot V3。"
