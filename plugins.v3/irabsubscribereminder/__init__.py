@@ -550,18 +550,6 @@ class IrabSubscribeReminder(_PluginBase):
             })
             return contents
         
-        # 表头
-        contents.append({
-            'component': 'VRow',
-            'props': {'class': 'font-weight-bold bg-surface-variant rounded-t'},
-            'content': [
-                {'component': 'VCol', 'props': {'cols': 1}, 'content': [{'component': 'div', 'text': '#', 'props': {'class': 'text-center pa-2'}}]},
-                {'component': 'VCol', 'props': {'cols': 2}, 'content': [{'component': 'div', 'text': '类型', 'props': {'class': 'text-center pa-2'}}]},
-                {'component': 'VCol', 'props': {'cols': 6}, 'content': [{'component': 'div', 'text': '名称', 'props': {'class': 'pa-2'}}]},
-                {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'div', 'text': '更新集数', 'props': {'class': 'text-center pa-2'}}]},
-            ]
-        })
-        
         # 数据行
         for idx, item in enumerate(all_items, 1):
             kind = item.get('kind', '电视剧')
