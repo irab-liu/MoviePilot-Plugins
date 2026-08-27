@@ -3,14 +3,14 @@
     "name": "订阅提醒v3",
     "description": "推送当天订阅更新内容。（v3兼容版）",
     "labels": "订阅",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "icon": "subscribe_reminder.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.0.5": "适配 MoviePilot V3。"
+      "v1.0.6": "增加插件详情页，显示今日更新内容。"
     }
   }
 }
