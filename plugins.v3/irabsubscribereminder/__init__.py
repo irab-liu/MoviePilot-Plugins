@@ -19,7 +19,7 @@ class IrabSubscribeReminder(_PluginBase):
     plugin_name = "订阅提醒v3"
     plugin_desc = "推送当天订阅更新内容。（v3兼容版）"
     plugin_icon = "subscribe_reminder.png"
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "irabsubscribe_reminder_"
@@ -264,6 +264,13 @@ class IrabSubscribeReminder(_PluginBase):
 
         if not current_tv_subscribe and not current_movie_subscribe:
             logger.info("[IRAB] 今日无匹配更新，不推送")
+        
+        # 保存今日更新数据到缓存，供详情页显示
+        self.save_data('today_updates', {
+            'tv': current_tv_subscribe,
+            'movie': current_movie_subscribe,
+            'last_run': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
 
     def __send_batch_message(
         self,
@@ -454,8 +461,180 @@ class IrabSubscribeReminder(_PluginBase):
             "time": 9,
         }
 
-    def get_page(self) -> Optional[List[dict]]:
-        return None
+    def get_page(self) -> List[dict]:
+        """
+        插件详情页 — 显示今日订阅更新。
+        """
+        # 获取缓存的今日更新数据
+        today_data = self.get_data('today_updates')
+        
+        if not today_data:
+            return [
+                {
+                    'component': 'VRow',
+                    'content': [
+                        {
+                            'component': 'VCol',
+                            'props': {'cols': 12},
+                            'content': [
+                                {
+                                    'component': 'VAlert',
+                                    'props': {
+                                        'type': 'info',
+                                        'variant': 'tonal',
+                                        'text': '暂无更新数据，请运行一次插件或等待定时执行。'
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        
+        tv_items = today_data.get('tv', [])
+        movie_items = today_data.get('movie', [])
+        last_run = today_data.get('last_run', '未知')
+        
+        contents = []
+        
+        # 标题
+        contents.append({
+            'component': 'VRow',
+            'content': [
+                {
+                    'component': 'VCol',
+                    'props': {'cols': 12},
+                    'content': [
+                        {
+                            'component': 'VAlert',
+                            'props': {
+                                'type': 'success',
+                                'variant': 'tonal',
+                                'text': f'最后更新：{last_run}'
+                            }
+                        }
+                    ]
+                }
+            ]
+        })
+        
+        # 电视剧更新
+        if tv_items:
+            tv_cards = []
+            for item in tv_items:
+                tv_cards.append({
+                    'component': 'VCol',
+                    'props': {'cols': 12, 'md': 6, 'lg': 4},
+                    'content': [
+                        {
+                            'component': 'VCard',
+                            'content': [
+                                {
+                                    'component': 'VCardText',
+                                    'props': {'class': 'pa-2'},
+                                    'content': [
+                                        {
+                                            'component': 'div',
+                                            'text': f"📺︎{item.get('name', '')}",
+                                            'props': {'class': 'font-weight-bold'}
+                                        },
+                                        {
+                                            'component': 'div',
+                                            'text': f"{item.get('season', '')}{item.get('episode', '')}",
+                                            'props': {'class': 'text-caption'}
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                })
+            
+            contents.append({
+                'component': 'VRow',
+                'content': [
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 12},
+                        'content': [
+                            {
+                                'component': 'h3',
+                                'text': f'📺 电视剧更新 ({len(tv_items)})',
+                                'props': {'class': 'mb-2'}
+                            }
+                        ]
+                    }
+                ]
+            })
+            contents.append({'component': 'VRow', 'content': tv_cards})
+        
+        # 电影更新
+        if movie_items:
+            movie_cards = []
+            for item in movie_items:
+                movie_cards.append({
+                    'component': 'VCol',
+                    'props': {'cols': 12, 'md': 6, 'lg': 4},
+                    'content': [
+                        {
+                            'component': 'VCard',
+                            'content': [
+                                {
+                                    'component': 'VCardText',
+                                    'props': {'class': 'pa-2'},
+                                    'content': [
+                                        {
+                                            'component': 'div',
+                                            'text': f"📽︎{item.get('name', '')}",
+                                            'props': {'class': 'font-weight-bold'}
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                })
+            
+            contents.append({
+                'component': 'VRow',
+                'content': [
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 12},
+                        'content': [
+                            {
+                                'component': 'h3',
+                                'text': f'📽 电影更新 ({len(movie_items)})',
+                                'props': {'class': 'mb-2'}
+                            }
+                        ]
+                    }
+                ]
+            })
+            contents.append({'component': 'VRow', 'content': movie_cards})
+        
+        if not tv_items and not movie_items:
+            contents.append({
+                'component': 'VRow',
+                'content': [
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 12},
+                        'content': [
+                            {
+                                'component': 'VAlert',
+                                'props': {
+                                    'type': 'info',
+                                    'variant': 'tonal',
+                                    'text': '今日暂无更新内容'
+                                }
+                            }
+                        ]
+                    }
+                ]
+            })
+        
+        return contents
 
     def stop_service(self) -> None:
         self._enabled = False
