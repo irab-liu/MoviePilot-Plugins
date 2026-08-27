@@ -24,7 +24,7 @@ class IrabSubscribeReminder(_PluginBase):
     # 插件图标
     plugin_icon = "subscribe_reminder.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "irab"
     # 作者主页
@@ -58,10 +58,14 @@ class IrabSubscribeReminder(_PluginBase):
             self._time = config.get("time")
             self._subtype = config.get("subtype")
             self._msgtype = config.get("msgtype")
+            logger.info(f"[IRAB] init_plugin: enabled={self._enabled}, onlyonce={self._onlyonce}, subtype={self._subtype}")
 
             if self._onlyonce:
-                logger.info("IRAB订阅提醒服务启动，立即运行一次")
-                threading.Thread(target=self.__send_notify, daemon=True).start()
+                logger.info("[IRAB] 立即运行一次")
+                try:
+                    self.__send_notify()
+                except Exception as e:
+                    logger.error(f"[IRAB] 立即运行失败: {e}")
                 self._onlyonce = False
                 self.__update_config()
 
@@ -75,8 +79,41 @@ class IrabSubscribeReminder(_PluginBase):
             "msgtype": self._msgtype,
         })
 
+    def __is_tv(self, sub) -> bool:
+        """兼容 V1 字符串和 V3 枚举的电视剧判断。"""
+        t = sub.type
+        if t is None:
+            return False
+        # V3 枚举
+        if t == MediaType.TV:
+            return True
+        # V1 字符串兼容
+        tv_values = ["电视剧", "tv", "TV", "Tv"]
+        if isinstance(t, str) and t.strip() in tv_values:
+            return True
+        # 枚举的 value 属性
+        if hasattr(t, "value") and t.value in tv_values:
+            return True
+        return False
+
+    def __is_movie(self, sub) -> bool:
+        """兼容 V1 字符串和 V3 枚举的电影判断。"""
+        t = sub.type
+        if t is None:
+            return False
+        if t == MediaType.MOVIE:
+            return True
+        movie_values = ["电影", "movie", "MOVIE", "Movie"]
+        if isinstance(t, str) and t.strip() in movie_values:
+            return True
+        if hasattr(t, "value") and t.value in movie_values:
+            return True
+        return False
+
     def __send_notify(self) -> None:
         """核心推送逻辑。"""
+        logger.info("[IRAB] __send_notify 开始执行")
+
         if not self.subscribe_oper:
             self.subscribe_oper = SubscribeOper()
         if not self.tmdb:
@@ -86,37 +123,51 @@ class IrabSubscribeReminder(_PluginBase):
 
         subscribes = self.subscribe_oper.list()
         if not subscribes:
-            logger.error("当前没有订阅，跳过处理")
+            logger.error("[IRAB] 当前没有订阅，跳过处理")
             return
 
+        logger.info(f"[IRAB] 共 {len(subscribes)} 条订阅, subtype={self._subtype}")
+
         if not self._subtype:
-            logger.error("订阅类型不能为空")
+            logger.error("[IRAB] 订阅类型不能为空")
             return
 
         current_date = datetime.now().date().strftime("%Y-%m-%d")
+        logger.info(f"[IRAB] 当前日期: {current_date}")
 
         mtype = NotificationType.Plugin
         if self._msgtype:
             try:
                 mtype = NotificationType[self._msgtype]
             except (KeyError, TypeError):
-                logger.warning(f"无效的消息类型：{self._msgtype}，回退到 Manual")
+                logger.warning(f"[IRAB] 无效的消息类型：{self._msgtype}，回退到 Manual")
                 mtype = NotificationType.Manual
 
         current_tv_subscribe: List[Dict[str, Any]] = []
         current_movie_subscribe: List[Dict[str, Any]] = []
 
-        for subscribe in subscribes:
+        for i, subscribe in enumerate(subscribes):
+            # 诊断日志：前3条打印详细信息
+            if i < 3:
+                logger.info(f"[IRAB] 订阅[{i}]: name={subscribe.name}, type={subscribe.type} (type={type(subscribe.type).__name__}), tmdbid={subscribe.tmdbid}, season={subscribe.season}")
+
             # 电视剧
-            if "tv" in self._subtype and subscribe.type == MediaType.TV:
+            if "tv" in self._subtype and self.__is_tv(subscribe):
                 if not subscribe.tmdbid or not subscribe.season:
+                    logger.info(f"[IRAB]  跳过 {subscribe.name}: 缺少 tmdbid={subscribe.tmdbid} 或 season={subscribe.season}")
                     continue
 
-                episodes_info = self.tmdb.tmdb_episodes(
-                    tmdbid=subscribe.tmdbid,
-                    season=subscribe.season,
-                )
+                try:
+                    episodes_info = self.tmdb.tmdb_episodes(
+                        tmdbid=int(subscribe.tmdbid),
+                        season=int(subscribe.season),
+                    )
+                except Exception as e:
+                    logger.error(f"[IRAB] 获取剧集失败 {subscribe.name}: {e}")
+                    continue
+
                 if not episodes_info:
+                    logger.info(f"[IRAB]  {subscribe.name} 无剧集数据")
                     continue
 
                 episodes = [
@@ -126,6 +177,7 @@ class IrabSubscribeReminder(_PluginBase):
                 ]
 
                 if episodes:
+                    logger.info(f"[IRAB]  {subscribe.name} S{subscribe.season} 今日更新: {episodes}")
                     current_tv_subscribe.append({
                         'name': f"{subscribe.name} ({subscribe.year})",
                         'season': f"S{str(subscribe.season).rjust(2, '0')}",
@@ -136,30 +188,43 @@ class IrabSubscribeReminder(_PluginBase):
                         ),
                         'image': subscribe.backdrop or subscribe.poster,
                     })
+                else:
+                    logger.info(f"[IRAB]  {subscribe.name} 今日无更新")
 
             # 电影
-            if "movie" in self._subtype and subscribe.type == MediaType.MOVIE:
+            if "movie" in self._subtype and self.__is_movie(subscribe):
                 if not subscribe.tmdbid:
+                    logger.info(f"[IRAB]  跳过 {subscribe.name}: 缺少 tmdbid")
                     continue
 
-                meta = MetaInfo(title=subscribe.name, year=subscribe.year)
-                mediainfo = self.media.recognize_media(
-                    meta=meta,
-                    mtype=MediaType.MOVIE,
-                    media_source=MediaSource.TMDB,
-                    media_id=str(subscribe.tmdbid),
-                )
+                try:
+                    meta = MetaInfo(title=subscribe.name, year=subscribe.year)
+                    mediainfo = self.media.recognize_media(
+                        meta=meta,
+                        mtype=MediaType.MOVIE,
+                        media_source=MediaSource.TMDB,
+                        media_id=str(int(subscribe.tmdbid)),
+                    )
+                except Exception as e:
+                    logger.error(f"[IRAB] 识别媒体失败 {subscribe.name}: {e}")
+                    continue
+
                 if not mediainfo:
+                    logger.info(f"[IRAB]  {subscribe.name} 未识别到媒体信息")
                     continue
 
                 if str(mediainfo.release_date) == current_date:
+                    logger.info(f"[IRAB]  {subscribe.name} 今日上映!")
                     current_movie_subscribe.append({
                         'name': f"{subscribe.name} ({subscribe.year})",
                         'image': subscribe.backdrop or subscribe.poster,
                     })
+                else:
+                    logger.info(f"[IRAB]  {subscribe.name} release_date={mediainfo.release_date}")
 
         # 推送
         if "tv" in self._subtype and current_tv_subscribe:
+            logger.info(f"[IRAB] 准备推送 {len(current_tv_subscribe)} 条电视剧更新")
             self.__send_batch_message(
                 mtype=mtype,
                 title="电视剧更新",
@@ -169,6 +234,7 @@ class IrabSubscribeReminder(_PluginBase):
             )
 
         if "movie" in self._subtype and current_movie_subscribe:
+            logger.info(f"[IRAB] 准备推送 {len(current_movie_subscribe)} 条电影更新")
             self.__send_batch_message(
                 mtype=mtype,
                 title="电影更新",
@@ -176,6 +242,9 @@ class IrabSubscribeReminder(_PluginBase):
                 icon="📽︎",
                 include_season=False,
             )
+
+        if not current_tv_subscribe and not current_movie_subscribe:
+            logger.info("[IRAB] 今日无匹配更新，不推送")
 
     def __send_batch_message(
         self,
@@ -200,24 +269,24 @@ class IrabSubscribeReminder(_PluginBase):
             images.append(item.get('image'))
 
             if count % 8 == 0:
+                logger.info(f"[IRAB] 发送{title}: {text.strip()}")
                 self.post_message(
                     mtype=mtype,
                     title=title,
                     text=text,
                     image=random.choice(images) if images else None,
                 )
-                logger.info(f"推送{title}：{text}")
                 text = ""
                 images = []
 
         if text:
+            logger.info(f"[IRAB] 发送{title}: {text.strip()}")
             self.post_message(
                 mtype=mtype,
                 title=title,
                 text=text,
                 image=random.choice(images) if images else None,
             )
-            logger.info(f"推送{title}：{text}")
 
     def get_state(self) -> bool:
         return self._enabled
