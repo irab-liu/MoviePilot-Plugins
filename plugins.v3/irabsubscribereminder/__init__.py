@@ -17,26 +17,16 @@ from app.schemas import NotificationType, MediaType, MediaSource
 class IrabSubscribeReminder(_PluginBase):
     """IRAB订阅提醒 - 推送当天订阅更新内容。"""
 
-    # 插件名称
     plugin_name = "IRAB订阅提醒"
-    # 插件描述
     plugin_desc = "推送当天订阅更新内容。（IRAB 版）"
-    # 插件图标
     plugin_icon = "subscribe_reminder.png"
-    # 插件版本
-    plugin_version = "1.0.1"
-    # 插件作者
+    plugin_version = "1.0.2"
     plugin_author = "irab"
-    # 作者主页
     author_url = "https://github.com/irab-liu"
-    # 插件配置项ID前缀
     plugin_config_prefix = "irabsubscribe_reminder_"
-    # 加载顺序
     plugin_order = 34
-    # 可使用的用户级别
     auth_level = 1
 
-    # 私有属性
     _enabled: bool = False
     _onlyonce: bool = False
     _time: Optional[int] = None
@@ -65,12 +55,11 @@ class IrabSubscribeReminder(_PluginBase):
                 try:
                     self.__send_notify()
                 except Exception as e:
-                    logger.error(f"[IRAB] 立即运行失败: {e}")
+                    logger.error(f"[IRAB] 立即运行失败: {e}", exc_info=True)
                 self._onlyonce = False
                 self.__update_config()
 
     def __update_config(self) -> None:
-        """持久化当前配置。"""
         self.update_config({
             "enabled": self._enabled,
             "onlyonce": self._onlyonce,
@@ -79,25 +68,44 @@ class IrabSubscribeReminder(_PluginBase):
             "msgtype": self._msgtype,
         })
 
+    def __get_tmdb_id(self, sub) -> Optional[int]:
+        """
+        从订阅中提取 TMDB ID。
+        V3 模型使用 media_source + media_id，不再有 tmdbid 字段。
+        """
+        # 优先直接使用 media_source=TMDB 的 media_id
+        if sub.media_source and str(sub.media_source).upper() in ("TMDB", "MEDIASOURCE.TMDB"):
+            try:
+                return int(sub.media_id)
+            except (ValueError, TypeError):
+                pass
+
+        # 兼容旧模型（如果有 tmdbid 属性）
+        if hasattr(sub, 'tmdbid') and sub.tmdbid:
+            try:
+                return int(sub.tmdbid)
+            except (ValueError, TypeError):
+                pass
+
+        # 尝试从 recognize_media 获取
+        return None
+
     def __is_tv(self, sub) -> bool:
-        """兼容 V1 字符串和 V3 枚举的电视剧判断。"""
+        """判断是否为电视剧。"""
         t = sub.type
         if t is None:
             return False
-        # V3 枚举
         if t == MediaType.TV:
             return True
-        # V1 字符串兼容
-        tv_values = ["电视剧", "tv", "TV", "Tv"]
+        tv_values = ["电视剧", "tv", "TV", "Tv", "series", "Series"]
         if isinstance(t, str) and t.strip() in tv_values:
             return True
-        # 枚举的 value 属性
         if hasattr(t, "value") and t.value in tv_values:
             return True
         return False
 
     def __is_movie(self, sub) -> bool:
-        """兼容 V1 字符串和 V3 枚举的电影判断。"""
+        """判断是否为电影。"""
         t = sub.type
         if t is None:
             return False
@@ -147,19 +155,24 @@ class IrabSubscribeReminder(_PluginBase):
         current_movie_subscribe: List[Dict[str, Any]] = []
 
         for i, subscribe in enumerate(subscribes):
-            # 诊断日志：前3条打印详细信息
-            if i < 3:
-                logger.info(f"[IRAB] 订阅[{i}]: name={subscribe.name}, type={subscribe.type} (type={type(subscribe.type).__name__}), tmdbid={subscribe.tmdbid}, season={subscribe.season}")
+            # 诊断：打印第一条订阅的所有属性
+            if i == 0:
+                attrs = [a for a in dir(subscribe) if not a.startswith('_')]
+                logger.info(f"[IRAB] 订阅对象属性: {attrs}")
+                logger.info(f"[IRAB] 订阅[0]: name={subscribe.name}, type={subscribe.type}, media_source={subscribe.media_source}, media_id={subscribe.media_id}, season={subscribe.season}")
+
+            tmdb_id = self.__get_tmdb_id(subscribe)
+            logger.info(f"[IRAB] 订阅[{i}]: name={subscribe.name}, type={subscribe.type}, tmdb_id={tmdb_id}, season={subscribe.season}")
 
             # 电视剧
             if "tv" in self._subtype and self.__is_tv(subscribe):
-                if not subscribe.tmdbid or not subscribe.season:
-                    logger.info(f"[IRAB]  跳过 {subscribe.name}: 缺少 tmdbid={subscribe.tmdbid} 或 season={subscribe.season}")
+                if not tmdb_id or not subscribe.season:
+                    logger.info(f"[IRAB]  跳过 {subscribe.name}: 缺少 tmdb_id={tmdb_id} 或 season={subscribe.season}")
                     continue
 
                 try:
                     episodes_info = self.tmdb.tmdb_episodes(
-                        tmdbid=int(subscribe.tmdbid),
+                        tmdbid=tmdb_id,
                         season=int(subscribe.season),
                     )
                 except Exception as e:
@@ -193,7 +206,7 @@ class IrabSubscribeReminder(_PluginBase):
 
             # 电影
             if "movie" in self._subtype and self.__is_movie(subscribe):
-                if not subscribe.tmdbid:
+                if not tmdb_id:
                     logger.info(f"[IRAB]  跳过 {subscribe.name}: 缺少 tmdbid")
                     continue
 
@@ -203,7 +216,7 @@ class IrabSubscribeReminder(_PluginBase):
                         meta=meta,
                         mtype=MediaType.MOVIE,
                         media_source=MediaSource.TMDB,
-                        media_id=str(int(subscribe.tmdbid)),
+                        media_id=str(tmdb_id),
                     )
                 except Exception as e:
                     logger.error(f"[IRAB] 识别媒体失败 {subscribe.name}: {e}")
