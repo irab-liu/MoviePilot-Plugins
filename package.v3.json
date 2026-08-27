@@ -1,31 +1,16 @@
 {
-  "SubscribeReminder": {
-    "name": "订阅提醒",
+  "IrabSubscribeReminder": {
+    "name": "IRAB订阅提醒",
     "description": "推送当天订阅更新内容。",
     "labels": "订阅",
     "version": "1.0.0",
     "icon": "subscribe_reminder.png",
-    "author": "thsrite",
+    "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.0.0": "适配 MoviePilot V3。"
-    }
-  }
-}
-{
-  "MyPlugin": {
-    "name": "我的插件",
-    "description": "一个最小可运行的 MoviePilot V3 插件。",
-    "labels": "示例",
-    "version": "1.0.0",
-    "icon": "Moviepilot_A.png",
-    "author": "your-name",
-    "level": 1,
-    "system_version": ">=3.0.0",
-    "history": {
-      "v1.0.0": "首次发布。"
+      "v1.0.0": "IRAB 版，适配 MoviePilot V3。"
     }
   }
 }
