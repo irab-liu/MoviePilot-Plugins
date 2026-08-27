@@ -262,10 +262,10 @@ class IrabSubscribeReminder(_PluginBase):
                 {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "今日暂无更新内容"}}]}]})
             return contents
         contents.append({"component": "VRow", "props": {"class": "text-caption text-medium-emphasis border-b mb-2"}, "content": [
-            {"component": "VCol", "props": {"cols": 1}, "content": [{"component": "div", "text": "#"}]},
-            {"component": "VCol", "props": {"cols": 2}, "content": [{"component": "div", "text": "类型"}]},
-            {"component": "VCol", "props": {"cols": 6}, "content": [{"component": "div", "text": "名称"}]},
-            {"component": "VCol", "props": {"cols": 3}, "content": [{"component": "div", "text": "更新集数"}]},
+            {"component": "VCol", "props": {"cols": 1}, "content": [{"component": "div", "text": "#", "props": {"class": "text-center pa-2 text-caption"}}]},
+            {"component": "VCol", "props": {"cols": 2}, "content": [{"component": "div", "text": "类型", "props": {"class": "text-center pa-2"}}]},
+            {"component": "VCol", "props": {"cols": 6}, "content": [{"component": "div", "text": "名称", "props": {"class": "pa-2 font-weight-medium"}}]},
+            {"component": "VCol", "props": {"cols": 3}, "content": [{"component": "div", "text": "更新集数", "props": {"class": "text-center pa-2 text-caption"}}]},
         ]})
         for idx, item in enumerate(all_items, 1):
             kind = item.get('kind', '电视剧')
