@@ -19,7 +19,7 @@ class IrabSubscribeReminder(_PluginBase):
     plugin_name = "订阅提醒v3"
     plugin_desc = "推送当天订阅更新内容。（v3兼容版）"
     plugin_icon = "subscribe_reminder.png"
-    plugin_version = "1.0.6"
+    plugin_version = "1.0.7"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "irabsubscribe_reminder_"
@@ -463,9 +463,9 @@ class IrabSubscribeReminder(_PluginBase):
 
     def get_page(self) -> List[dict]:
         """
-        插件详情页 — 显示今日订阅更新。
+        插件详情页 — 表格形式显示今日订阅更新。
+        列：序号 | 类型 | 名称 | 更新集数
         """
-        # 获取缓存的今日更新数据
         today_data = self.get_data('today_updates')
         
         if not today_data:
@@ -493,11 +493,21 @@ class IrabSubscribeReminder(_PluginBase):
         
         tv_items = today_data.get('tv', [])
         movie_items = today_data.get('movie', [])
+        anime_items = today_data.get('anime', [])
         last_run = today_data.get('last_run', '未知')
+        
+        # 合并所有条目
+        all_items = []
+        for item in tv_items:
+            all_items.append({**item, 'kind': '电视剧'})
+        for item in anime_items:
+            all_items.append({**item, 'kind': '动漫'})
+        for item in movie_items:
+            all_items.append({**item, 'kind': '电影'})
         
         contents = []
         
-        # 标题
+        # 标题栏
         contents.append({
             'component': 'VRow',
             'content': [
@@ -510,7 +520,7 @@ class IrabSubscribeReminder(_PluginBase):
                             'props': {
                                 'type': 'success',
                                 'variant': 'tonal',
-                                'text': f'最后更新：{last_run}'
+                                'text': f'最后更新：{last_run}  |  今日更新：{len(all_items)} 条'
                             }
                         }
                     ]
@@ -518,102 +528,7 @@ class IrabSubscribeReminder(_PluginBase):
             ]
         })
         
-        # 电视剧更新
-        if tv_items:
-            tv_cards = []
-            for item in tv_items:
-                tv_cards.append({
-                    'component': 'VCol',
-                    'props': {'cols': 12, 'md': 6, 'lg': 4},
-                    'content': [
-                        {
-                            'component': 'VCard',
-                            'content': [
-                                {
-                                    'component': 'VCardText',
-                                    'props': {'class': 'pa-2'},
-                                    'content': [
-                                        {
-                                            'component': 'div',
-                                            'text': f"📺︎{item.get('name', '')}",
-                                            'props': {'class': 'font-weight-bold'}
-                                        },
-                                        {
-                                            'component': 'div',
-                                            'text': f"{item.get('season', '')}{item.get('episode', '')}",
-                                            'props': {'class': 'text-caption'}
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                })
-            
-            contents.append({
-                'component': 'VRow',
-                'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 12},
-                        'content': [
-                            {
-                                'component': 'h3',
-                                'text': f'📺 电视剧更新 ({len(tv_items)})',
-                                'props': {'class': 'mb-2'}
-                            }
-                        ]
-                    }
-                ]
-            })
-            contents.append({'component': 'VRow', 'content': tv_cards})
-        
-        # 电影更新
-        if movie_items:
-            movie_cards = []
-            for item in movie_items:
-                movie_cards.append({
-                    'component': 'VCol',
-                    'props': {'cols': 12, 'md': 6, 'lg': 4},
-                    'content': [
-                        {
-                            'component': 'VCard',
-                            'content': [
-                                {
-                                    'component': 'VCardText',
-                                    'props': {'class': 'pa-2'},
-                                    'content': [
-                                        {
-                                            'component': 'div',
-                                            'text': f"📽︎{item.get('name', '')}",
-                                            'props': {'class': 'font-weight-bold'}
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                })
-            
-            contents.append({
-                'component': 'VRow',
-                'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 12},
-                        'content': [
-                            {
-                                'component': 'h3',
-                                'text': f'📽 电影更新 ({len(movie_items)})',
-                                'props': {'class': 'mb-2'}
-                            }
-                        ]
-                    }
-                ]
-            })
-            contents.append({'component': 'VRow', 'content': movie_cards})
-        
-        if not tv_items and not movie_items:
+        if not all_items:
             contents.append({
                 'component': 'VRow',
                 'content': [
@@ -631,6 +546,38 @@ class IrabSubscribeReminder(_PluginBase):
                             }
                         ]
                     }
+                ]
+            })
+            return contents
+        
+        # 表头
+        contents.append({
+            'component': 'VRow',
+            'props': {'class': 'font-weight-bold bg-surface-variant rounded-t'},
+            'content': [
+                {'component': 'VCol', 'props': {'cols': 1}, 'content': [{'component': 'div', 'text': '#', 'props': {'class': 'text-center pa-2'}}]},
+                {'component': 'VCol', 'props': {'cols': 2}, 'content': [{'component': 'div', 'text': '类型', 'props': {'class': 'text-center pa-2'}}]},
+                {'component': 'VCol', 'props': {'cols': 6}, 'content': [{'component': 'div', 'text': '名称', 'props': {'class': 'pa-2'}}]},
+                {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'div', 'text': '更新集数', 'props': {'class': 'text-center pa-2'}}]},
+            ]
+        })
+        
+        # 数据行
+        for idx, item in enumerate(all_items, 1):
+            kind = item.get('kind', '电视剧')
+            name = item.get('name', '')
+            season = item.get('season', '')
+            episode = item.get('episode', '')
+            update_info = f"{season}{episode}" if season else '上映'
+            
+            contents.append({
+                'component': 'VRow',
+                'props': {'class': 'border-b'},
+                'content': [
+                    {'component': 'VCol', 'props': {'cols': 1}, 'content': [{'component': 'div', 'text': str(idx), 'props': {'class': 'text-center pa-2 text-caption'}}]},
+                    {'component': 'VCol', 'props': {'cols': 2}, 'content': [{'component': 'div', 'text': kind, 'props': {'class': 'text-center pa-2'}}]},
+                    {'component': 'VCol', 'props': {'cols': 6}, 'content': [{'component': 'div', 'text': name, 'props': {'class': 'pa-2 font-weight-medium'}}]},
+                    {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'div', 'text': update_info, 'props': {'class': 'text-center pa-2 text-caption'}}]},
                 ]
             })
         
