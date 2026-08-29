@@ -131,7 +131,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
     plugin_author = "irab"
     author_url = ""
     plugin_config_prefix = "maoyandingyue_"
@@ -275,13 +275,14 @@ class MaoyanDianYing(_PluginBase):
         # 兼容飞牛/绿联等不支持媒体服务器同步协议的环境：
         # 通过文件整理记录表判断媒体是否已入库。
         try:
-            from app.db.models.transferhistory import TransferHistory
-            transfer_record = self._transfer_oper._execute_sync_query(
-                lambda session: session.query(TransferHistory).filter(
-                    TransferHistory.media_source == media_source,
-                    TransferHistory.media_id == media_id,
-                    TransferHistory.status == True,
-                ).first()
+            transfer_records = self._transfer_oper.get_by(
+                media_source=media_source,
+                media_id=media_id,
+                mtype=MediaType.TV.value,
+            )
+            transfer_record = next(
+                (record for record in transfer_records if getattr(record, "status", False)),
+                None,
             )
         except Exception as e:
             logger.error("【状态检查】整理记录查询异常：media_id=%s, error=%s", media_id, e)
