@@ -12,5 +12,19 @@
     "history": {
       "v1.0.7": "详情页改为表格形式：序号/类型/名称/更新集数。"
     }
+  },
+  "MaoyanDianYing": {
+    "name": "猫眼热度榜",
+    "description": "抓取猫眼网播热度 TOP30 剧集，展示 TMDB 海报和演员。",
+    "labels": "榜单,剧集,猫眼",
+    "version": "1.0.0",
+    "icon": "Moviepilot_A.png",
+    "author": "irab",
+    "level": 1,
+    "release": true,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "首次发布：抓取猫眼网播热度 TOP30，展示 TMDB 海报与演员。"
+    }
   }
 }
