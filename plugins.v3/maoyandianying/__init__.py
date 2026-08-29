@@ -16,6 +16,7 @@ from fastapi import Body
 from app.chain.subscribe import SubscribeChain
 from app.db.oper.mediaserver import MediaServerOper
 from app.db.oper.subscribe import SubscribeOper
+from app.db.oper.transferhistory import TransferHistoryOper
 from app.modules.themoviedb.tmdbapi import TmdbApi
 from app.plugins import _PluginBase
 from app.sdk.logging import logger
@@ -130,7 +131,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.4"
     plugin_author = "irab"
     author_url = ""
     plugin_config_prefix = "maoyandingyue_"
@@ -153,6 +154,7 @@ class MaoyanDianYing(_PluginBase):
         self._refresh_interval = int(config.get("refresh_interval", 6))
         self._subscribe_oper = SubscribeOper()
         self._media_oper = MediaServerOper()
+        self._transfer_oper = TransferHistoryOper()
         logger.info("插件初始化完成，enabled=%s, refresh_interval=%sh", self._enabled, self._refresh_interval)
 
     def get_state(self) -> bool:
@@ -270,6 +272,29 @@ class MaoyanDianYing(_PluginBase):
                 return "影片已入库"
             logger.info("【状态检查】按标题也未命中：title=%s, mtype=%s", name, MediaType.TV.value)
 
+        # 兼容飞牛/绿联等不支持媒体服务器同步协议的环境：
+        # 通过文件整理记录表判断媒体是否已入库。
+        try:
+            from app.db.models.transferhistory import TransferHistory
+            transfer_record = self._transfer_oper._execute_sync_query(
+                lambda session: session.query(TransferHistory).filter(
+                    TransferHistory.media_source == media_source,
+                    TransferHistory.media_id == media_id,
+                    TransferHistory.status == True,
+                ).first()
+            )
+        except Exception:
+            logger.exception("【状态检查】整理记录查询异常：media_id=%s", media_id)
+            transfer_record = None
+        if transfer_record:
+            logger.info(
+                "【状态检查】整理记录命中：title=%s, dest=%s",
+                getattr(transfer_record, "title", ""),
+                getattr(transfer_record, "dest", ""),
+            )
+            return "影片已入库"
+        logger.info("【状态检查】整理记录未命中：media_source=%s, media_id=%s", media_source, media_id)
+
         # 媒体库未命中后再查订阅，避免已入库媒体被误显示为未订阅。
         try:
             subs = self._subscribe_oper.list_by_media_identity(
@@ -283,7 +308,7 @@ class MaoyanDianYing(_PluginBase):
             logger.info("【状态检查】订阅命中：media_source=%s, media_id=%s, count=%s", media_source, media_id, len(subs))
             return "订阅已添加"
 
-        logger.info("【状态检查】媒体库和订阅均未命中：media_source=%s, media_id=%s", media_source, media_id)
+        logger.info("【状态检查】媒体库、整理记录和订阅均未命中：media_source=%s, media_id=%s", media_source, media_id)
         return "未添加订阅"
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
