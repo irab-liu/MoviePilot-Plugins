@@ -131,7 +131,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
     plugin_author = "irab"
     author_url = ""
     plugin_config_prefix = "maoyandingyue_"
@@ -232,8 +232,8 @@ class MaoyanDianYing(_PluginBase):
                 media_id=media_id,
                 mtype=MediaType.TV.value,
             )
-        except Exception:
-            logger.exception("【状态检查】媒体库查询异常：media_id=%s", media_id)
+        except Exception as e:
+            logger.error("【状态检查】媒体库查询异常：media_id=%s, error=%s", media_id, e)
             return "未添加订阅"
 
         if item:
@@ -256,8 +256,8 @@ class MaoyanDianYing(_PluginBase):
                     title=name,
                     mtype=MediaType.TV.value,
                 )
-            except Exception:
-                logger.exception("【状态检查】按标题查询媒体库异常：title=%s", name)
+            except Exception as e:
+                logger.error("【状态检查】按标题查询媒体库异常：title=%s, error=%s", name, e)
                 title_item = None
             if title_item:
                 logger.info(
@@ -283,8 +283,8 @@ class MaoyanDianYing(_PluginBase):
                     TransferHistory.status == True,
                 ).first()
             )
-        except Exception:
-            logger.exception("【状态检查】整理记录查询异常：media_id=%s", media_id)
+        except Exception as e:
+            logger.error("【状态检查】整理记录查询异常：media_id=%s, error=%s", media_id, e)
             transfer_record = None
         if transfer_record:
             logger.info(
@@ -300,8 +300,8 @@ class MaoyanDianYing(_PluginBase):
             subs = self._subscribe_oper.list_by_media_identity(
                 media_source=media_source, media_id=media_id
             )
-        except Exception:
-            logger.exception("【状态检查】订阅查询异常：media_id=%s", media_id)
+        except Exception as e:
+            logger.error("【状态检查】订阅查询异常：media_id=%s, error=%s", media_id, e)
             return "未添加订阅"
 
         if subs:
@@ -619,7 +619,7 @@ class MaoyanDianYing(_PluginBase):
             logger.warning("【添加订阅】失败：%s (TMDB ID: %s) - %s", name, tmdbid, msg)
             return {"success": False, "message": str(msg or "添加订阅失败"), "data": None}
         except Exception as e:
-            logger.exception("【添加订阅】异常：%s", e)
+            logger.error("【添加订阅】异常：%s", e)
             return {"success": False, "message": str(e), "data": None}
 
     def _update_cached_tmdbid(self, name: str, tmdbid: int) -> None:
