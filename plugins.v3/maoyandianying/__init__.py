@@ -130,7 +130,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "irab"
     author_url = ""
     plugin_config_prefix = "maoyandingyue_"
@@ -207,7 +207,7 @@ class MaoyanDianYing(_PluginBase):
             },
         ]
 
-    def _check_media_status(self, tmdbid: int) -> str:
+    def _check_media_status(self, tmdbid: int, name: str = "") -> str:
         """按 TMDB 媒体身份返回“影片已入库”“订阅已添加”或“未添加订阅”。"""
         if not tmdbid:
             logger.debug("【状态检查】tmdbid 为空，返回未添加")
@@ -244,7 +244,31 @@ class MaoyanDianYing(_PluginBase):
             )
             return "影片已入库"
 
-        logger.info("【状态检查】媒体库未命中：media_source=%s, media_id=%s", media_source, media_id)
+        logger.info("【状态检查】媒体库身份未命中：media_source=%s, media_id=%s", media_source, media_id)
+
+        # 兼容历史媒体库记录：部分旧同步数据没有保存 TMDB media_source/media_id，
+        # 此时按榜单剧名和电视剧类型做兜底匹配，避免已入库内容误显示为未订阅。
+        if name:
+            try:
+                title_item = self._media_oper.exists(
+                    title=name,
+                    mtype=MediaType.TV.value,
+                )
+            except Exception:
+                logger.exception("【状态检查】按标题查询媒体库异常：title=%s", name)
+                title_item = None
+            if title_item:
+                logger.info(
+                    "【状态检查】按标题命中媒体库：title=%s, stored_title=%s, "
+                    "stored_media_source=%s, stored_media_id=%s, stored_item_type=%s",
+                    name,
+                    getattr(title_item, "title", ""),
+                    getattr(title_item, "media_source", ""),
+                    getattr(title_item, "media_id", ""),
+                    getattr(title_item, "item_type", ""),
+                )
+                return "影片已入库"
+            logger.info("【状态检查】按标题也未命中：title=%s, mtype=%s", name, MediaType.TV.value)
 
         # 媒体库未命中后再查订阅，避免已入库媒体被误显示为未订阅。
         try:
@@ -330,7 +354,7 @@ class MaoyanDianYing(_PluginBase):
         for row in rows:
             actors = " / ".join(row.get("actors", [])) if row.get("actors") else "暂无"
             # 检查订阅/入库状态
-            status_text = self._check_media_status(row.get("tmdbid", 0))
+            status_text = self._check_media_status(row.get("tmdbid", 0), row.get("name", ""))
             if status_text == "影片已入库":
                 status_color = "#4CAF50"  # 绿色
             elif status_text == "订阅已添加":
