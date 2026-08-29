@@ -12,5 +12,19 @@
     "history": {
       "v1.0.0": "IRAB 版，适配 MoviePilot V3。"
     }
+  },
+  "MaoyanDianYing": {
+    "name": "猫眼热度榜",
+    "description": "网播【电视剧+网剧】TOP30 剧集订阅情况，一键订阅。",
+    "labels": "榜单,剧集,猫眼",
+    "version": "1.0.6",
+    "icon": "Moviepilot_A.png",
+    "author": "irab",
+    "level": 1,
+    "v2": false,
+    "v3": false,
+    "history": {
+      "v1.0.6": "V3专用版本"
+    }
   }
 }
