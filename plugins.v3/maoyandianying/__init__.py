@@ -1,6 +1,6 @@
 """
 猫眼热度榜 - MoviePilot V3 插件
-抓取猫眼网播热度 TOP30 剧集，展示 TMDB 海报和演员。
+猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。
 """
 
 import json
@@ -128,7 +128,7 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "抓取猫眼网播热度 TOP30 剧集，展示 TMDB 海报和演员。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
     plugin_version = "1.0.0"
     plugin_author = "irab"
@@ -221,7 +221,11 @@ class MaoyanDianYing(_PluginBase):
             media_id=media_id,
             mtype=MediaType.TV.value,
         )
-        # 再查订阅
+        logger.debug("【状态检查】媒体库查询结果: %s", item)
+        if item:
+            return "影片已入库"
+
+        # 媒体库未命中后再查订阅，避免已入库媒体被误显示为未订阅。
         subs = self._subscribe_oper.list_by_media_identity(
             media_source=media_source, media_id=media_id
         )
