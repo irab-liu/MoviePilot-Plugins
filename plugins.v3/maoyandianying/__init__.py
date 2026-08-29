@@ -130,7 +130,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     plugin_author = "irab"
     author_url = ""
     plugin_config_prefix = "maoyandingyue_"
@@ -214,24 +214,52 @@ class MaoyanDianYing(_PluginBase):
             return "未添加订阅"
         media_source = "themoviedb"
         media_id = str(tmdbid)
-        logger.debug("【状态检查】tmdbid=%s, media_source=%s, media_id=%s", tmdbid, media_source, media_id)
-        # 使用宿主公开接口判断媒体库状态，明确指定电视剧类型。
-        item = self._media_oper.exists(
-            media_source=media_source,
-            media_id=media_id,
-            mtype=MediaType.TV.value,
+        # 记录实际查询条件，便于与正式环境媒体库字段逐项比对。
+        logger.info(
+            "【状态检查】开始：tmdbid=%s, media_source=%s, media_id=%s, mtype=%s",
+            tmdbid,
+            media_source,
+            media_id,
+            MediaType.TV.value,
         )
-        logger.debug("【状态检查】媒体库查询结果: %s", item)
+
+        # 使用宿主公开接口判断媒体库状态，明确指定电视剧类型。
+        try:
+            item = self._media_oper.exists(
+                media_source=media_source,
+                media_id=media_id,
+                mtype=MediaType.TV.value,
+            )
+        except Exception:
+            logger.exception("【状态检查】媒体库查询异常：media_id=%s", media_id)
+            return "未添加订阅"
+
         if item:
+            logger.info(
+                "【状态检查】媒体库命中：title=%s, media_source=%s, media_id=%s, item_type=%s",
+                getattr(item, "title", ""),
+                getattr(item, "media_source", ""),
+                getattr(item, "media_id", ""),
+                getattr(item, "item_type", ""),
+            )
             return "影片已入库"
 
+        logger.info("【状态检查】媒体库未命中：media_source=%s, media_id=%s", media_source, media_id)
+
         # 媒体库未命中后再查订阅，避免已入库媒体被误显示为未订阅。
-        subs = self._subscribe_oper.list_by_media_identity(
-            media_source=media_source, media_id=media_id
-        )
-        logger.debug("【状态检查】订阅查询结果: %s", subs)
+        try:
+            subs = self._subscribe_oper.list_by_media_identity(
+                media_source=media_source, media_id=media_id
+            )
+        except Exception:
+            logger.exception("【状态检查】订阅查询异常：media_id=%s", media_id)
+            return "未添加订阅"
+
         if subs:
+            logger.info("【状态检查】订阅命中：media_source=%s, media_id=%s, count=%s", media_source, media_id, len(subs))
             return "订阅已添加"
+
+        logger.info("【状态检查】媒体库和订阅均未命中：media_source=%s, media_id=%s", media_source, media_id)
         return "未添加订阅"
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
