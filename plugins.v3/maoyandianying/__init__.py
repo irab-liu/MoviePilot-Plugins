@@ -14,7 +14,6 @@ import requests
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Body
 from app.chain.subscribe import SubscribeChain
-from app.db.models.mediaserver import MediaServerItem
 from app.db.oper.mediaserver import MediaServerOper
 from app.db.oper.subscribe import SubscribeOper
 from app.modules.themoviedb.tmdbapi import TmdbApi
@@ -216,18 +215,12 @@ class MaoyanDianYing(_PluginBase):
         media_source = "themoviedb"
         media_id = str(tmdbid)
         logger.debug("【状态检查】tmdbid=%s, media_source=%s, media_id=%s", tmdbid, media_source, media_id)
-        # 兼容历史媒体库记录：这里必须忽略 item_type。
-        # MediaServerOper.exists() 在未传 mtype 时会查询 item_type IS NULL，可能漏判电视记录，
-        # 因此在宿主提供“不限类型”的公开接口前，保留此兼容查询。
-        item = self._media_oper._execute_sync_query(
-            lambda session: session.query(MediaServerItem).filter(
-                MediaServerItem.media_source == media_source,
-                MediaServerItem.media_id == media_id,
-            ).first()
+        # 使用宿主公开接口判断媒体库状态，明确指定电视剧类型。
+        item = self._media_oper.exists(
+            media_source=media_source,
+            media_id=media_id,
+            mtype=MediaType.TV.value,
         )
-        logger.debug("【状态检查】媒体库查询结果: %s", item)
-        if item:
-            return "影片已入库"
         # 再查订阅
         subs = self._subscribe_oper.list_by_media_identity(
             media_source=media_source, media_id=media_id
