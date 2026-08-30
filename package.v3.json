@@ -15,7 +15,7 @@
   },
   "MaoyanDianYing": {
     "name": "猫眼热度榜",
-    "description": "网播【电视剧+网剧】TOP30 剧集订阅情况，一键订阅。",
+    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
     "version": "1.0.6",
     "icon": "Moviepilot_A.png",
