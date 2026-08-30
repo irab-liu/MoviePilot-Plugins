@@ -133,7 +133,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_icon = "Moviepilot_A.png"
     plugin_version = "1.0.6"
     plugin_author = "irab"
-    author_url = ""
+    author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
     plugin_order = 50
     auth_level = 1
