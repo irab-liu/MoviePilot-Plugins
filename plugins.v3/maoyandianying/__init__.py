@@ -131,7 +131,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.6"
+    plugin_version = "1.1.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -149,17 +149,34 @@ class MaoyanDianYing(_PluginBase):
         """读取配置并建立本次运行所需状态。"""
         config = config or {}
         logger.debug("【init_plugin】收到的配置: %s", config)
-        # 与 get_form() 默认配置保持一致；关闭开关或重置后必须保持停用。
         self._enabled = bool(config.get("enabled", False))
         self._refresh_interval = int(config.get("refresh_interval", 6))
         self._subscribe_oper = SubscribeOper()
         self._media_oper = MediaServerOper()
         self._transfer_oper = TransferHistoryOper()
         logger.info("插件初始化完成，enabled=%s, refresh_interval=%sh", self._enabled, self._refresh_interval)
+        if self._enabled:
+            cached = super().get_data(self._cache_key)
+            if not cached or not isinstance(cached, dict) or not cached.get("rows"):
+                logger.info("【启用后抓取】未发现有效缓存，启动首次后台抓取")
+                threading.Thread(
+                    target=self._auto_refresh,
+                    name="MaoyanDianYing.InitialRefresh",
+                    daemon=True,
+                ).start()
+            else:
+                logger.info("【启用后抓取】发现已有缓存，共 %d 条，不重复抓取", len(cached.get("rows", [])))
 
     def get_state(self) -> bool:
         """返回插件当前是否启用。"""
         return self._enabled
+
+    @staticmethod
+    def get_render_mode() -> tuple[str, str]:
+        """返回 Vue 远程组件渲染模式及产物目录。"""
+        render_mode = ("vue", "dist/assets")
+        logger.info("【联邦组件】渲染模式：mode=%s, path=%s", render_mode[0], render_mode[1])
+        return render_mode
 
     @staticmethod
     def get_command() -> list[dict[str, Any]]:
@@ -207,16 +224,31 @@ class MaoyanDianYing(_PluginBase):
                 "description": "为指定 TMDB ID 的剧集添加订阅",
                 "auth": "bear",
             },
+            {
+                "path": "/get-cache",
+                "endpoint": self.get_cache,
+                "methods": ["GET"],
+                "summary": "获取缓存数据",
+                "description": "返回当前缓存的猫眼热度数据，不触发数据抓取",
+                "auth": "bear",
+            },
+            {
+                "path": "/get-cast",
+                "endpoint": self.get_cast,
+                "methods": ["GET"],
+                "summary": "获取演员阵容",
+                "description": "根据 TMDB ID 获取演员阵容数据",
+                "auth": "bear",
+            },
         ]
 
     def _check_media_status(self, tmdbid: int, name: str = "") -> str:
-        """按 TMDB 媒体身份返回“影片已入库”“订阅已添加”或“未添加订阅”。"""
+        """按 TMDB 媒体身份返回"影片已入库""订阅已添加"或"未添加订阅"。"""
         if not tmdbid:
             logger.debug("【状态检查】tmdbid 为空，返回未添加")
             return "未添加订阅"
         media_source = "themoviedb"
         media_id = str(tmdbid)
-        # 记录实际查询条件，便于与正式环境媒体库字段逐项比对。
         logger.info(
             "【状态检查】开始：tmdbid=%s, media_source=%s, media_id=%s, mtype=%s",
             tmdbid,
@@ -225,7 +257,7 @@ class MaoyanDianYing(_PluginBase):
             MediaType.TV.value,
         )
 
-        # 使用宿主公开接口判断媒体库状态，明确指定电视剧类型。
+        # 1. 查询媒体库（按 TMDB 媒体身份）
         try:
             item = self._media_oper.exists(
                 media_source=media_source,
@@ -248,8 +280,7 @@ class MaoyanDianYing(_PluginBase):
 
         logger.info("【状态检查】媒体库身份未命中：media_source=%s, media_id=%s", media_source, media_id)
 
-        # 兼容历史媒体库记录：部分旧同步数据没有保存 TMDB media_source/media_id，
-        # 此时按榜单剧名和电视剧类型做兜底匹配，避免已入库内容误显示为未订阅。
+        # 2. 兼容历史媒体库记录：按剧名和电视剧类型做兜底匹配
         if name:
             try:
                 title_item = self._media_oper.exists(
@@ -272,8 +303,7 @@ class MaoyanDianYing(_PluginBase):
                 return "影片已入库"
             logger.info("【状态检查】按标题也未命中：title=%s, mtype=%s", name, MediaType.TV.value)
 
-        # 兼容飞牛/绿联等不支持媒体服务器同步协议的环境：
-        # 通过文件整理记录表判断媒体是否已入库。
+        # 3. 兼容飞牛/绿联等不支持媒体服务器同步协议的环境：通过文件整理记录表判断
         try:
             transfer_records = self._transfer_oper.get_by(
                 media_source=media_source,
@@ -296,7 +326,7 @@ class MaoyanDianYing(_PluginBase):
             return "影片已入库"
         logger.info("【状态检查】整理记录未命中：media_source=%s, media_id=%s", media_source, media_id)
 
-        # 媒体库未命中后再查订阅，避免已入库媒体被误显示为未订阅。
+        # 4. 最后查询订阅表
         try:
             subs = self._subscribe_oper.list_by_media_identity(
                 media_source=media_source, media_id=media_id
@@ -314,6 +344,7 @@ class MaoyanDianYing(_PluginBase):
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
         """返回配置页面和默认配置。"""
+        logger.info("【配置页面】返回 Vuetify 配置表单（Vue 模式使用远程 Config 组件）")
         return [
             {
                 "component": "VForm",
@@ -358,216 +389,9 @@ class MaoyanDianYing(_PluginBase):
         }
 
     def get_page(self) -> list[dict]:
-        """返回插件详情页（卡片样式）。停用时不得抓取或访问业务数据。"""
-        if not self.get_state():
-            logger.debug("插件未启用，详情页不执行数据抓取")
-            return [
-                {
-                    "component": "VAlert",
-                    "props": {
-                        "type": "info",
-                        "variant": "tonal",
-                        "density": "compact",
-                    },
-                    "text": "插件当前未启用，请先在插件设置中打开“启用插件”并保存。",
-                }
-            ]
-
-        data = self._get_cached_data()
-        rows = data.get("rows", [])
-
-        cards = []
-        for row in rows:
-            actors = " / ".join(row.get("actors", [])) if row.get("actors") else "暂无"
-            # 检查订阅/入库状态
-            status_text = self._check_media_status(row.get("tmdbid", 0), row.get("name", ""))
-            if status_text == "影片已入库":
-                status_color = "#4CAF50"  # 绿色
-            elif status_text == "订阅已添加":
-                status_color = "#1976D2"  # 蓝色
-            else:
-                status_color = "#9E9E9E"  # 灰色
-            cards.append({
-                "component": "VCard",
-                "props": {
-                    "variant": "outlined",
-                    "class": "mb-2",
-                    "rounded": "lg",
-                },
-                "content": [
-                    {
-                        "component": "VRow",
-                        "props": {"no-gutters": True, "align": "center"},
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": "auto", "class": "pa-2"},
-                                "content": [
-                                    {
-                                        "component": "div",
-                                        "props": {"style": "position: relative;"},
-                                        "content": [
-                                            {
-                                                "component": "VImg",
-                                                "props": {
-                                                    "src": row.get("poster", ""),
-                                                    "width": 90,
-                                                    "height": 120,
-                                                    "cover": True,
-                                                    "rounded": "sm",
-                                                    "class": "bg-grey-lighten-3",
-                                                },
-                                            },
-                                            {
-                                                "component": "div",
-                                                "props": {
-                                                    "style": f"position: absolute; bottom: 0; left: 0; right: 0; background: {status_color}; color: white; font-size: 9px; text-align: center; padding: 2px 0; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;"
-                                                },
-                                                "text": status_text,
-                                            },
-                                        ],
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"class": "pa-2"},
-                                "content": [
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "d-flex align-center mb-1"},
-                                        "content": [
-                                            {
-                                                "component": "VChip",
-                                                "props": {
-                                                    "color": "primary",
-                                                    "size": "x-small",
-                                                    "label": True,
-                                                    "class": "mr-1 text-caption",
-                                                },
-                                                "text": str(row.get("rank", "")),
-                                            },
-                                            {
-                                                "component": "span",
-                                                "props": {
-                                                    "class": "font-weight-bold",
-                                                    "style": "font-size: 10px;"
-                                                },
-                                                "text": row.get("name", ""),
-                                            },
-                                        ],
-                                    },
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "mb-0.5", "style": "font-size: 10px;"},
-                                        "content": [
-                                            {"component": "VIcon", "props": {"size": "x-small", "class": "mr-1", "color": "grey"}, "text": "mdi-television-classic"},
-                                            {"component": "span", "text": row.get("platform", "")},
-                                        ],
-                                    },
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "mb-0.5", "style": "font-size: 10px;"},
-                                        "content": [
-                                            {"component": "VIcon", "props": {"size": "x-small", "class": "mr-1", "color": "grey"}, "text": "mdi-calendar-clock"},
-                                            {"component": "span", "text": row.get("days", "")},
-                                        ],
-                                    },
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "mb-0.5", "style": "font-size: 10px;"},
-                                        "content": [
-                                            {"component": "VIcon", "props": {"size": "x-small", "class": "mr-1", "color": "red"}, "text": "mdi-fire"},
-                                            {"component": "span", "props": {"class": "font-weight-medium"}, "text": str(row.get("heat", ""))},
-                                        ],
-                                    },
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "mb-0.5", "style": "font-size: 10px;"},
-                                        "content": [
-                                            {"component": "VIcon", "props": {"size": "x-small", "class": "mr-1", "color": "grey"}, "text": "mdi-play-circle-outline"},
-                                            {"component": "span", "text": row.get("plays", "") or "—"},
-                                        ],
-                                    },
-                                    {
-                                        "component": "div",
-                                        "props": {"style": "font-size: 10px; color: #999;"},
-                                        "content": [
-                                            {"component": "VIcon", "props": {"size": "x-small", "class": "mr-1", "color": "grey"}, "text": "mdi-account-group-outline"},
-                                            {"component": "span", "text": actors},
-                                        ],
-                                    },
-                                    # 订阅按钮
-                                    {
-                                        "component": "VBtn",
-                                        "props": {
-                                            "size": "x-small",
-                                            "variant": "tonal",
-                                            "color": "primary" if status_text == "未添加订阅" else "grey",
-                                            "disabled": status_text != "未添加订阅",
-                                            "class": "mt-1",
-                                        },
-                                        "events": {"click": {"api": "plugin/MaoyanDianYing/subscribe", "method": "POST", "params": {"tmdbid": row.get("tmdbid", 0), "name": row.get("name", "")}}},
-                                        "text": status_text if status_text != "未添加订阅" else "订阅",
-                                    },
-                                ],
-                            },
-                        ],
-                    }
-                ],
-            })
-
-        return [
-            {
-                "component": "VRow",
-                "content": [
-                    {
-                        "component": "VCol",
-                        "props": {"cols": 12},
-                        "content": [
-                            {
-                                "component": "VBtn",
-                                "props": {"color": "primary", "variant": "tonal", "prepend-icon": "mdi-play"},
-                                "events": {"click": {"api": "plugin/MaoyanDianYing/run-once", "method": "POST", "params": {}}},
-                                "text": "立即运行1次",
-                            },
-                            {
-                                "component": "VBtn",
-                                "props": {"color": "secondary", "variant": "tonal", "prepend-icon": "mdi-refresh", "class": "ml-2"},
-                                "events": {"click": {"api": "plugin/MaoyanDianYing/refresh", "method": "POST", "params": {}}},
-                                "text": "刷新数据",
-                            },
-                            {
-                                "component": "span",
-                                "props": {"class": "ml-3 text-grey", "style": "align-self: center; font-size: 11px;"},
-                                "text": "💡 立即运行：完整抓取榜单+海报 | 刷新数据：仅重取海报演员",
-                            },
-                            {
-                                "component": "VChip",
-                                "props": {"color": "info", "size": "small", "variant": "outlined", "class": "ml-auto"},
-                                "content": [
-                                    {"component": "VIcon", "props": {"size": "x-small", "start": True}, "text": "mdi-clock-outline"},
-                                    {"component": "span", "props": {"style": "font-size: 12px;"}, "text": f"更新时间：{data.get('update_time', '暂无数据')}"},
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VCol",
-                        "props": {"cols": 12},
-                        "content": [
-                            {
-                                "component": "VRow",
-                                "content": [
-                                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [card]}
-                                    for card in cards
-                                ],
-                            }
-                        ],
-                    },
-                ],
-            }
-        ]
+        """Vue 远程组件模式下不再使用 Vuetify JSON 渲染。"""
+        logger.info("【数据页面】返回空 JSON，交由远程 Page 组件渲染")
+        return []
 
     def stop_service(self) -> None:
         """标记插件停用；定时任务由 MoviePilot 根据 ``get_service`` 统一移除。"""
@@ -697,6 +521,7 @@ class MaoyanDianYing(_PluginBase):
 
     def refresh_tmdb(self):
         """刷新数据 API：重新获取 TMDB 海报和演员数据（不重新抓取猫眼榜单）。"""
+        logger.info("【刷新数据API】收到请求")
         logger.info("【刷新数据】开始重新获取 TMDB 数据...")
         start_time = time.time()
         try:
@@ -738,8 +563,47 @@ class MaoyanDianYing(_PluginBase):
             logger.error("【刷新数据】失败（%ss）: %s", elapsed, e)
             return {"success": False, "message": str(e), "data": None}
 
+    def get_cache(self):
+        """获取缓存数据，不触发抓取。"""
+        logger.info("【获取缓存API】收到请求：enabled=%s", self.get_state())
+        if not self.get_state():
+            logger.info("【获取缓存API】插件未启用，返回未启用状态")
+            return {
+                "success": True,
+                "enabled": False,
+                "data": {"rows": [], "total": 0},
+                "from_cache": False,
+            }
+        cached = super().get_data(self._cache_key)
+        if cached and isinstance(cached, dict) and cached.get("rows"):
+            # 每次读取缓存都重新计算状态，确保订阅/入库操作后状态最新
+            for item in cached.get("rows", []):
+                item["status"] = self._check_media_status(
+                    item.get("tmdbid", 0), item.get("name", "")
+                )
+            logger.info("【获取缓存API】返回缓存数据，共 %d 条", len(cached.get("rows", [])))
+            return {"success": True, "enabled": True, "data": cached, "from_cache": True}
+        logger.info("【获取缓存API】缓存为空")
+        return {"success": True, "enabled": True, "data": {"rows": [], "total": 0}, "from_cache": False}
+
+    def get_cast(self, tmdbid: int = None):
+        """获取演员阵容数据。"""
+        logger.info("【获取演员API】收到请求：tmdbid=%s", tmdbid)
+        if not tmdbid:
+            return {"success": False, "message": "缺少 tmdbid 参数", "data": None}
+        try:
+            api = TmdbApi(language="zh")
+            result = api.tv.credits(tmdbid)
+            cast = result.get("cast", [])[:20]
+            logger.info("【获取演员API】返回 %d 条演员数据", len(cast))
+            return {"success": True, "data": cast}
+        except Exception as e:
+            logger.error("【获取演员API】失败：%s", e)
+            return {"success": False, "message": str(e), "data": None}
+
     def run_once(self):
         """立即运行1次 API（实时抓取并更新缓存）。"""
+        logger.info("【立即运行1次API】收到请求")
         logger.info("【立即运行1次】开始实时抓取...")
         start_time = time.time()
         try:
@@ -781,56 +645,3 @@ class MaoyanDianYing(_PluginBase):
             elapsed = round(time.time() - start_time, 1)
             logger.error("【立即运行1次】失败（%ss）: %s", elapsed, e)
             return {"success": False, "message": str(e), "data": {"rows": [], "total": 0, "elapsed": elapsed}}
-
-    def _get_cached_data(self) -> Dict[str, Any]:
-        """返回有效缓存；缓存缺失或过期时串行执行一次完整抓取。
-
-        双重检查用于避免详情页并发请求在等待锁后重复访问猫眼和 TMDB。
-        """
-        cached = super().get_data(self._cache_key)
-        if cached and isinstance(cached, dict):
-            timestamp = cached.get("timestamp", 0)
-            if time.time() - timestamp < self._refresh_interval * 3600:
-                logger.debug("缓存命中（%ds 前）", int(time.time() - timestamp))
-                return cached
-        logger.debug("缓存未命中或已过期")
-        with self._fetch_lock:
-            # 等待锁期间其他请求可能已经生成了新缓存。
-            cached = super().get_data(self._cache_key)
-            if cached and isinstance(cached, dict):
-                timestamp = cached.get("timestamp", 0)
-                if time.time() - timestamp < self._refresh_interval * 3600:
-                    logger.debug("等待抓取锁后命中缓存（%ds 前）", int(time.time() - timestamp))
-                    return cached
-            return self._fetch_and_cache()
-
-    def _fetch_and_cache(self) -> Dict[str, Any]:
-        """抓取猫眼榜单、补充 TMDB 信息并写入插件数据缓存。"""
-        try:
-            heat_list = MaoyanScraper.fetch_heat_list()
-            enriched = []
-            for item in heat_list:
-                name = item.get("name", "")
-                tmdb_info = TmdbHelper.search_tv(name)
-                if tmdb_info:
-                    poster_path = tmdb_info.get("poster_path", "")
-                    item["poster"] = TmdbHelper.get_poster_url(poster_path) or item.get("poster", "")
-                    tmdbid = tmdb_info.get("id")
-                    if tmdbid:
-                        item["tmdbid"] = tmdbid
-                        actors = TmdbHelper.get_tv_credits(tmdbid)
-                        if actors:
-                            item["actors"] = actors
-                enriched.append(item)
-                time.sleep(0.3)
-            result = {
-                "rows": enriched,
-                "timestamp": time.time(),
-                "total": len(enriched),
-                "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            self.save_data(self._cache_key, result)
-            return result
-        except Exception as e:
-            logger.error("抓取并缓存失败: %s", e)
-            return {"rows": [], "timestamp": time.time(), "total": 0, "error": str(e)}
