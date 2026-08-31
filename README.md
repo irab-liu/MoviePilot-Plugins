@@ -27,12 +27,16 @@
 
 ### 2. 猫眼TOP30探索 (MaoyanTop30)
 
-**版本**：v1.0.3
+**版本**：v1.1.1
 
 **描述**：让探索支持猫眼电视剧-top30，思路来源于 DDSRem 大佬的项目实现。
 
+**数据链路**：猫眼榜单 → TMDB 搜索获取 ID 和海报 → MediaInfo → MoviePilot 探索 → 原生详情页
+
 **功能**：
 - 将猫眼网播热度榜作为探索数据源
+- 通过 TMDB 搜索获取标准媒体身份
+- 注册为 MoviePilot 探索数据源
 - 支持在探索页面浏览猫眼 TOP30 剧集
 - 支持定时自动刷新（可配置间隔）
 
@@ -71,6 +75,7 @@
 - v1.0.0：首次发布
 
 ### MaoyanTop30
+- v1.1.1：重构插件结构和数据链路文档
 - v1.0.3：增加定时自动刷新功能，可配置刷新间隔
 - v1.0.0：首次发布
 
@@ -82,7 +87,7 @@
 ## 🔗 下载链接
 
 - [MaoyanDianYing v1.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.1.0)
-- [MaoyanTop30 v1.0.3](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.0.3)
+- [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
 
 ---
