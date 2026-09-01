@@ -59,7 +59,7 @@ class ugnasfeedback(_PluginBase):
     plugin_desc = "通过账号密码自动登录或手动Cookie登录绿联云官网，获取「我的反馈」分类（公测反馈/需求反馈）的信息与状态并推送通知"
     plugin_icon = "ugreen-nas.png"
     plugin_version = "1.0.0"
-    plugin_author = "时也，命也"
+    plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "ugnasfeedback_"
     plugin_order = 2
