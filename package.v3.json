@@ -31,14 +31,28 @@
     "name": "猫眼TOP30探索",
     "description": "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.1.1": "增加定时自动刷新功能，可配置刷新间隔"
+      "v1.1.2": "修复定时刷新缓存清除方式。"
+    }
+  },
+  "ugnasfeedback": {
+    "name": "绿联云反馈监控",
+    "description": "通过账号密码自动登录或手动Cookie登录绿联云官网，获取「我的反馈」分类（公测反馈/需求反馈）的信息与状态并推送通知",
+    "labels": "反馈,监控,绿联",
+    "version": "1.0.0",
+    "icon": "ugreen-nas.png",
+    "author": "时也，命也",
+    "level": 1,
+    "release": true,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "首次发布：绿联云反馈监控，支持公测反馈和需求反馈的状态追踪与通知。"
     }
   }
 }
