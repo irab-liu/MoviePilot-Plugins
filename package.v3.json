@@ -24,21 +24,23 @@
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.1.0": "新增海报点击打开媒体详情页功能"
+      "v1.1.0": "新增海报点击打开媒体详情页功能",
+      "v1.0.6": "修复媒体库状态检查异常处理，增强日志诊断。"
     }
   },
   "MaoyanTop30": {
     "name": "猫眼TOP30探索",
     "description": "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.1.1": "增加定时自动刷新功能，可配置刷新间隔"
+      "v1.1.2": "修复定时刷新缓存清除方式。",
+      "v1.1.1": "首次发布：猫眼网播热度TOP30剧集探索，支持一键订阅。"
     }
   },
   "ugnasfeedback": {
@@ -47,7 +49,7 @@
     "labels": "反馈,监控,绿联",
     "version": "1.0.0",
     "icon": "ugreen-nas.png",
-    "author": "时也，命也",
+    "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
