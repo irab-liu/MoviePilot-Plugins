@@ -47,7 +47,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.2"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -110,7 +110,6 @@ class MaoyanTop30(_PluginBase):
             }
         ]
 
-    @cached(region="maoyan_top30_discover", ttl=86400, skip_none=True)
     def __fetch_heat_list(self) -> List[Dict[str, Any]]:
         """
         抓取猫眼网播热度 TOP30 列表。
@@ -120,6 +119,12 @@ class MaoyanTop30(_PluginBase):
 
         :return: 标准化后的热度数据列表
         """
+        # 先尝试从缓存读取
+        cached = self.get_data(self._cache_key)
+        if cached and isinstance(cached, list):
+            logger.debug("缓存命中（%d 条）", len(cached))
+            return cached
+
         logger.info("开始抓取猫眼热度列表: %s", HEAT_URL)
 
         try:
@@ -166,6 +171,8 @@ class MaoyanTop30(_PluginBase):
                 "poster": series.get("poster", "") or series.get("img", ""),
             })
 
+        # 保存到缓存
+        self.save_data(self._cache_key, results)
         return results
 
     def recognize_media(
@@ -301,11 +308,11 @@ class MaoyanTop30(_PluginBase):
         """
         定时自动刷新任务。
 
-        清除缓存，下次用户访问时自动重新抓取最新数据。
+        清除缓存数据，下次用户访问时自动重新抓取最新数据。
         """
         logger.info("【定时刷新】开始...")
         try:
-            self.__fetch_heat_list.invalidate()
+            self.del_data(self._cache_key)
             logger.info("【定时刷新】完成，缓存已清除")
         except Exception as e:
             logger.error("【定时刷新】失败: %s", e)
