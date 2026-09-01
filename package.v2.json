@@ -17,14 +17,14 @@
     "name": "猫眼热度榜",
     "description": "网播【电视剧+网剧】TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.0.6",
+    "version": "1.1.1",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "v2": false,
     "v3": false,
     "history": {
-      "v1.0.6": "V3专用版本"
+      "v1.1.1": "P0 缓存预热 + P0 序列化修复 + P1 Status Check短TTL + P1 热重载幂等"
     }
   },
   "MaoyanTop30": {

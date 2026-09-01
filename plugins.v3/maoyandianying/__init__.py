@@ -6,6 +6,7 @@
 import json
 import re
 import time
+import hashlib
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -131,7 +132,7 @@ class MaoyanDianYing(_PluginBase):
     plugin_name = "猫眼热度榜"
     plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.1.0"
+    plugin_version = "1.1.1"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -144,6 +145,10 @@ class MaoyanDianYing(_PluginBase):
     _subscribe_oper = None
     _media_oper = None
     _fetch_lock = threading.Lock()
+    _warmup_lock = threading.Lock()
+    _warmup_done = False
+    _tmdb_cache_prefix = "maoyandingyue_tmdb_"
+    _status_cache_ttl = 300  # Status Check 短 TTL 缓存（秒）
 
     def init_plugin(self, config: dict | None = None) -> None:
         """读取配置并建立本次运行所需状态。"""
@@ -156,6 +161,7 @@ class MaoyanDianYing(_PluginBase):
         self._transfer_oper = TransferHistoryOper()
         logger.info("插件初始化完成，enabled=%s, refresh_interval=%sh", self._enabled, self._refresh_interval)
         if self._enabled:
+            self.__start_warmup()
             cached = super().get_data(self._cache_key)
             if not cached or not isinstance(cached, dict) or not cached.get("rows"):
                 logger.info("【启用后抓取】未发现有效缓存，启动首次后台抓取")
@@ -166,6 +172,127 @@ class MaoyanDianYing(_PluginBase):
                 ).start()
             else:
                 logger.info("【启用后抓取】发现已有缓存，共 %d 条，不重复抓取", len(cached.get("rows", [])))
+
+    def __start_warmup(self):
+        """启动 daemon 线程执行预热，避免阻塞插件加载"""
+        if self._warmup_done:
+            return
+        with self._warmup_lock:
+            if self._warmup_done:
+                return
+            self._warmup_done = True
+        thread = threading.Thread(
+            target=self.__warmup,
+            daemon=True,
+            name="maoyandingyue_warmup"
+        )
+        thread.start()
+        logger.info("【预热】线程已启动")
+
+    def __warmup(self):
+        """
+        预热：抓取榜单并缓存 TMDB 搜索结果。
+        纯同步实现，在 daemon 线程中运行，不依赖事件循环。
+        """
+        logger.info("【预热】开始...")
+        try:
+            heat_list = MaoyanScraper.fetch_heat_list()
+            if not heat_list:
+                logger.warning("【预热】榜单数据为空，跳过")
+                return
+            tmdb_api = TmdbApi(language="zh")
+            cached_count = 0
+            for item in heat_list:
+                title = item.get("name", "")
+                if not title:
+                    continue
+                cache_key = self.__tmdb_cache_key(title)
+                if self.get_data(cache_key):
+                    continue
+                try:
+                    result = tmdb_api.search_tvs(title, "")
+                    if result:
+                        self.save_data(cache_key, self.__tmdb_result_to_serializable(result[0]))
+                        cached_count += 1
+                except Exception as e:
+                    logger.warning("【预热】TMDB 搜索失败 [%s]: %s", title, e)
+            logger.info("【预热】完成，缓存 %d 条 TMDB 结果", cached_count)
+        except Exception as e:
+            logger.error("【预热】异常: %s", e)
+
+    @staticmethod
+    def __tmdb_cache_key(title: str) -> str:
+        """生成 TMDB 二级缓存 key"""
+        md5 = hashlib.md5(title.encode("utf-8")).hexdigest()[:12]
+        return f"maoyandingyue_tmdb_{md5}"
+
+    @staticmethod
+    def __tmdb_result_to_serializable(tmdb_info: dict) -> dict:
+        """将 TMDB 搜索结果转换为 JSON 可序列化 dict（处理 MediaType 枚举）"""
+        if not tmdb_info:
+            return tmdb_info
+        result = dict(tmdb_info)
+        if "media_type" in result and hasattr(result["media_type"], "value"):
+            result["media_type"] = result["media_type"].value
+        return result
+
+    def __get_cached_tmdb(self, title: str) -> Optional[dict]:
+        """从二级缓存读取 TMDB 数据"""
+        cache_key = self.__tmdb_cache_key(title)
+        try:
+            cached = self.get_data(cache_key)
+            if cached and isinstance(cached, dict):
+                return cached
+        except Exception:
+            pass
+        return None
+
+    def __save_cached_tmdb(self, title: str, tmdb_info: dict) -> None:
+        """保存 TMDB 数据到二级缓存"""
+        cache_key = self.__tmdb_cache_key(title)
+        try:
+            self.save_data(cache_key, self.__tmdb_result_to_serializable(tmdb_info))
+        except Exception:
+            pass
+
+    def __search_tmdb_with_cache(self, title: str) -> Optional[dict]:
+        """带二级缓存的 TMDB 搜索"""
+        cached = self.__get_cached_tmdb(title)
+        if cached:
+            return cached
+        try:
+            api = TmdbApi(language="zh")
+            result = api.search_tvs(title, "")
+            if result and len(result) > 0:
+                self.__save_cached_tmdb(title, result[0])
+                return result[0]
+        except Exception as e:
+            logger.error("【TMDB搜索】'%s' 失败: %s", title, e)
+        return None
+
+    def _get_cached_status(self, tmdbid: int, name: str = "") -> Optional[str]:
+        """从短 TTL 缓存读取状态"""
+        if not tmdbid:
+            return None
+        cache_key = f"maoyandingyue_status_{tmdbid}"
+        try:
+            cached = self.get_data(cache_key)
+            if cached and isinstance(cached, dict):
+                if time.time() - cached.get("ts", 0) < self._status_cache_ttl:
+                    return cached.get("status")
+        except Exception:
+            pass
+        return None
+
+    def _save_cached_status(self, tmdbid: int, status: str) -> None:
+        """保存状态到短 TTL 缓存"""
+        if not tmdbid:
+            return
+        cache_key = f"maoyandingyue_status_{tmdbid}"
+        try:
+            self.save_data(cache_key, {"status": status, "ts": time.time()})
+        except Exception:
+            pass
 
     def get_state(self) -> bool:
         """返回插件当前是否启用。"""
@@ -247,6 +374,13 @@ class MaoyanDianYing(_PluginBase):
         if not tmdbid:
             logger.debug("【状态检查】tmdbid 为空，返回未添加")
             return "未添加订阅"
+
+        # 短 TTL 缓存检查
+        cached_status = self._get_cached_status(tmdbid, name)
+        if cached_status is not None:
+            logger.debug("【状态检查】缓存命中：tmdbid=%s, status=%s", tmdbid, cached_status)
+            return cached_status
+
         media_source = "themoviedb"
         media_id = str(tmdbid)
         logger.info(
@@ -266,6 +400,7 @@ class MaoyanDianYing(_PluginBase):
             )
         except Exception as e:
             logger.error("【状态检查】媒体库查询异常：media_id=%s, error=%s", media_id, e)
+            self._save_cached_status(tmdbid, "未添加订阅")
             return "未添加订阅"
 
         if item:
@@ -276,6 +411,7 @@ class MaoyanDianYing(_PluginBase):
                 getattr(item, "media_id", ""),
                 getattr(item, "item_type", ""),
             )
+            self._save_cached_status(tmdbid, "影片已入库")
             return "影片已入库"
 
         logger.info("【状态检查】媒体库身份未命中：media_source=%s, media_id=%s", media_source, media_id)
@@ -300,6 +436,7 @@ class MaoyanDianYing(_PluginBase):
                     getattr(title_item, "media_id", ""),
                     getattr(title_item, "item_type", ""),
                 )
+                self._save_cached_status(tmdbid, "影片已入库")
                 return "影片已入库"
             logger.info("【状态检查】按标题也未命中：title=%s, mtype=%s", name, MediaType.TV.value)
 
@@ -323,6 +460,7 @@ class MaoyanDianYing(_PluginBase):
                 getattr(transfer_record, "title", ""),
                 getattr(transfer_record, "dest", ""),
             )
+            self._save_cached_status(tmdbid, "影片已入库")
             return "影片已入库"
         logger.info("【状态检查】整理记录未命中：media_source=%s, media_id=%s", media_source, media_id)
 
@@ -333,13 +471,16 @@ class MaoyanDianYing(_PluginBase):
             )
         except Exception as e:
             logger.error("【状态检查】订阅查询异常：media_id=%s, error=%s", media_id, e)
+            self._save_cached_status(tmdbid, "未添加订阅")
             return "未添加订阅"
 
         if subs:
             logger.info("【状态检查】订阅命中：media_source=%s, media_id=%s, count=%s", media_source, media_id, len(subs))
+            self._save_cached_status(tmdbid, "订阅已添加")
             return "订阅已添加"
 
         logger.info("【状态检查】媒体库、整理记录和订阅均未命中：media_source=%s, media_id=%s", media_source, media_id)
+        self._save_cached_status(tmdbid, "未添加订阅")
         return "未添加订阅"
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
@@ -396,6 +537,8 @@ class MaoyanDianYing(_PluginBase):
     def stop_service(self) -> None:
         """标记插件停用；定时任务由 MoviePilot 根据 ``get_service`` 统一移除。"""
         self._enabled = False
+        with self._warmup_lock:
+            self._warmup_done = False
         logger.info("插件已停止")
 
     def add_subscribe(self, body: dict = Body(...)) -> dict[str, Any]:
@@ -407,7 +550,7 @@ class MaoyanDianYing(_PluginBase):
         # 旧缓存可能没有 TMDB ID。按剧名即时补查，不能把 0 提交给订阅链。
         if not tmdbid and name:
             logger.info("【添加订阅】TMDB ID 为空，开始按剧名补查：%s", name)
-            tmdb_info = TmdbHelper.search_tv(name)
+            tmdb_info = self.__search_tmdb_with_cache(name)
             if tmdb_info:
                 tmdbid = tmdb_info.get("id")
                 logger.info("【添加订阅】按剧名补查成功：%s -> %s", name, tmdbid)
@@ -493,8 +636,8 @@ class MaoyanDianYing(_PluginBase):
                     item["poster"] = existing[name].get("poster", "")
                     item["actors"] = existing[name].get("actors", [])
                 else:
-                    # 新条目才获取 TMDB
-                    tmdb_info = TmdbHelper.search_tv(name)
+                    # 新条目才获取 TMDB（带二级缓存）
+                    tmdb_info = self.__search_tmdb_with_cache(name)
                     if tmdb_info:
                         poster_path = tmdb_info.get("poster_path", "")
                         item["poster"] = TmdbHelper.get_poster_url(poster_path)
@@ -537,7 +680,7 @@ class MaoyanDianYing(_PluginBase):
             updated = 0
             for item in rows:
                 name = item.get("name", "")
-                tmdb_info = TmdbHelper.search_tv(name)
+                tmdb_info = self.__search_tmdb_with_cache(name)
                 if tmdb_info:
                     poster_path = tmdb_info.get("poster_path", "")
                     item["poster"] = TmdbHelper.get_poster_url(poster_path) or item.get("poster", "")
@@ -613,7 +756,7 @@ class MaoyanDianYing(_PluginBase):
             enriched = []
             for item in heat_list:
                 name = item.get("name", "")
-                tmdb_info = TmdbHelper.search_tv(name)
+                tmdb_info = self.__search_tmdb_with_cache(name)
                 if tmdb_info:
                     poster_path = tmdb_info.get("poster_path", "")
                     item["poster"] = TmdbHelper.get_poster_url(poster_path) or item.get("poster", "")
