@@ -31,14 +31,13 @@
     "name": "猫眼TOP30探索",
     "description": "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.0.3",
+    "version": "1.1.1",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "v2": false,
     "v3": false,
     "history": {
-      "v1.0.3": "增加定时自动刷新功能，可配置刷新间隔。",
       "v1.1.1": "增加定时自动刷新功能，可配置刷新间隔"
     }
   },
