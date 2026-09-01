@@ -44,7 +44,26 @@
 
 ---
 
-### 3. 订阅提醒v3 (IrabSubscribeReminder)
+### 3. 绿联云反馈监控 (ugnasfeedback)
+
+**版本**：v1.0.0
+
+**描述**：通过账号密码自动登录或手动Cookie登录绿联云官网，获取「我的反馈」分类（公测反馈/需求反馈）的信息与状态并推送通知。
+
+**功能**：
+- 支持账号密码自动登录或手动Cookie登录
+- 获取「我的反馈」分类（公测反馈/需求反馈）
+- 监控反馈状态变化并推送通知
+- 支持历史记录保留天数配置
+
+**配置**：
+- 启用/禁用插件
+- 登录方式（账号密码/Cookie）
+- 历史保留天数
+
+---
+
+### 4. 订阅提醒v3 (IrabSubscribeReminder)
 
 **版本**：v1.0.7
 
@@ -76,6 +95,9 @@
 - v1.1.1：增加定时自动刷新功能，可配置刷新间隔
 - v1.0.0：首次发布
 
+### ugnasfeedback
+- v1.0.0：首次发布：绿联云反馈监控，支持公测反馈和需求反馈的状态追踪与通知。
+
 ### IrabSubscribeReminder
 - v1.0.7：详情页改为表格形式：序号/类型/名称/更新集数
 
@@ -85,6 +107,7 @@
 
 - [MaoyanDianYing v1.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.1.0)
 - [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
+- [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
 
 ---
