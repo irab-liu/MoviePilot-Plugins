@@ -1,30 +1,30 @@
 {
   "IrabSubscribeReminder": {
-    "name": "IRAB订阅提醒",
-    "description": "推送当天订阅更新内容。",
+    "name": "订阅提醒v3",
+    "description": "推送当天订阅更新内容。（v3兼容版）",
     "labels": "订阅",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "icon": "subscribe_reminder.png",
     "author": "irab",
     "level": 1,
-    "v2": true,
+    "v2": false,
     "v3": false,
     "history": {
-      "v1.0.0": "IRAB 版，适配 MoviePilot V3。"
+      "v1.0.7": "详情页改为表格形式：序号/类型/名称/更新集数。"
     }
   },
   "MaoyanDianYing": {
     "name": "猫眼热度榜",
-    "description": "网播【电视剧+网剧】TOP30 剧集订阅情况，一键订阅。",
+    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.1.1",
+    "version": "1.1.0",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "v2": false,
     "v3": false,
     "history": {
-      "v1.1.1": "P0 缓存预热 + P0 序列化修复 + P1 Status Check短TTL + P1 热重载幂等"
+      "v1.0.6": "v1.0.6 版本描述"
     }
   },
   "MaoyanTop30": {
