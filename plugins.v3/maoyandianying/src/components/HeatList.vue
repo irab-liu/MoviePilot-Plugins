@@ -14,6 +14,7 @@
             <VIcon start>mdi-refresh</VIcon>
             刷新
           </VBtn>
+          <VBtn size="small" variant="text" icon="mdi-close" @click="closePage" />
         </div>
       </VCol>
     </VRow>
@@ -42,13 +43,14 @@
             <VCol cols="auto" class="pa-2">
               <div style="position: relative">
                 <VImg
-                  :src="item.poster"
+                  :src="resolvePoster(item.poster, 'card-' + item.rank)"
                   width="120"
                   height="160"
                   cover
                   rounded="sm"
                   class="bg-grey-lighten-3"
                   :class="{ 'cursor-pointer': item.tmdbid }"
+                  @error="handlePosterError('card-' + item.rank)"
                   @click="openMediaDetail(item)"
                 />
                 <!-- 状态标签（海报底部） -->
@@ -131,10 +133,11 @@
             <div class="media-header">
               <div class="media-poster">
                 <VImg
-                  :src="getW500Image(detail.poster_path) || selectedItem?.poster"
+                  :src="resolvePoster(getW500Image(detail.poster_path) || selectedItem?.poster, 'detail-' + detail.tmdb_id)"
                   cover
                   class="object-cover ring-1 ring-gray-500"
                   style="aspect-ratio: 2 / 3"
+                  @error="handlePosterError('detail-' + detail.tmdb_id)"
                 >
                   <template #placeholder>
                     <div class="w-full h-full">
@@ -144,7 +147,7 @@
                 </VImg>
               </div>
               <div class="media-title">
-                <h1 class="d-flex flex-column flex-lg-row align-baseline">
+                <h1 class="d-flex flex-column flex-lg-row align-items-center align-items-lg-baseline">
                   <span>{{ detail.title || selectedItem?.name || '未知名称' }}</span>
                   <span v-if="detail.year" class="text-lg ms-1">（{{ detail.year }}）</span>
                 </h1>
@@ -208,7 +211,14 @@
                   </div>
                   <div v-else-if="cast.length" class="cast-list">
                     <div v-for="person in cast" :key="person.id" class="cast-card">
-                      <VImg :src="getW500Image(person.profile_path)" cover class="cast-photo" :aspect-ratio="2 / 3" />
+                      <VImg
+                        :src="resolvePoster(getW500Image(person.profile_path), 'cast-' + person.id)"
+                        cover
+                        class="cast-photo"
+                        :aspect-ratio="2 / 3"
+                        loading="lazy"
+                        @error="handlePosterError('cast-' + person.id)"
+                      />
                       <div class="cast-name">{{ person.name }}</div>
                       <div class="cast-character">{{ person.character }}</div>
                     </div>
@@ -266,6 +276,10 @@
         </VCardText>
       </VCard>
     </VDialog>
+    <!-- 成功提示 snackbar -->
+    <VSnackbar v-model="snackbarShow" color="success" timeout="3000" location="top">
+      {{ snackbarMsg }}
+    </VSnackbar>
   </div>
 </template>
 
@@ -314,8 +328,39 @@ const cast = ref<any[]>([])
 const castLoading = ref(false)
 /** 正在订阅中的 tmdbid 集合，用于显示按钮加载状态 */
 const subscribing = ref<Set<number>>(new Set())
+/** 成功提示 snackbar */
+const snackbarShow = ref(false)
+const snackbarMsg = ref('')
 
 const componentTag = '[MaoyanDianYing/Page]'
+
+/** 本地占位海报（内联 SVG data URI，无外网依赖） */
+const POSTER_PLACEHOLDER = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22500%22%20height%3D%22750%22%20viewBox%3D%220%200%20500%20750%22%3E%3Crect%20width%3D%22500%22%20height%3D%22750%22%20fill%3D%22%231e1e2e%22%2F%3E%3Crect%20x%3D%22180%22%20y%3D%22270%22%20width%3D%22140%22%20height%3D%22110%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22%23444%22%20stroke-width%3D%223%22%2F%3E%3Ccircle%20cx%3D%22210%22%20cy%3D%22300%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ccircle%20cx%3D%22250%22%20cy%3D%22300%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ccircle%20cx%3D%22290%22%20cy%3D%22300%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ccircle%20cx%3D%22210%22%20cy%3D%22350%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ccircle%20cx%3D%22250%22%20cy%3D%22350%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ccircle%20cx%3D%22290%22%20cy%3D%22350%22%20r%3D%228%22%20fill%3D%22%23444%22%2F%3E%3Ctext%20x%3D%22250%22%20y%3D%22440%22%20text-anchor%3D%22middle%22%20fill%3D%22%23555%22%20font-size%3D%2228%22%20font-family%3D%22system-ui%2Csans-serif%22%3E%E6%9A%82%E6%97%A0%E6%B5%B7%E6%8A%A5%3C%2Ftext%3E%3C%2Fsvg%3E"
+
+/** 加载失败的海报 key 集合 */
+const failedPosters = ref<Set<string>>(new Set())
+
+/** 标记海报加载失败 */
+function handlePosterError(key: string) {
+  const s = new Set(failedPosters.value)
+  s.add(key)
+  failedPosters.value = s
+}
+
+/** 将远程图片 URL 转为宿主图片代理地址，走已配置代理访问被墙的 image.tmdb.org */
+function toProxyUrl(url: string): string {
+  if (!url || !/^https?:\/\//i.test(url)) return url
+  const base = (window as any).MoviePilotAPI?.defaults?.baseURL || '/api/v1/'
+  const normalized = base.endsWith('/') ? base : `${base}/`
+  const abs = normalized.startsWith('/') ? normalized : `/${normalized}`
+  return `${abs}system/img/1?imgurl=${encodeURIComponent(url)}`
+}
+
+/** 解析海报 URL：空或失败时返回本地占位；否则走宿主图片代理 */
+function resolvePoster(poster: string | undefined, key: string): string {
+  if (!poster || failedPosters.value.has(key)) return POSTER_PLACEHOLDER
+  return toProxyUrl(poster)
+}
 
 // ---- 工具函数 ----
 
@@ -432,7 +477,7 @@ function refreshData() {
 /** 订阅指定条目 */
 async function subscribe(item: HeatItem) {
   const url = buildPluginUrl('subscribe')
-  if (!props.api || !item.tmdbid) return
+  if (!props.api) return
 
   subscribing.value.add(item.tmdbid)
   try {
@@ -443,9 +488,15 @@ async function subscribe(item: HeatItem) {
       if (selectedItem.value?.tmdbid === item.tmdbid) {
         selectedItem.value = { ...selectedItem.value, status: '订阅已添加' }
       }
+      // 显示成功提示
+      snackbarMsg.value = result?.message || '订阅已添加'
+      snackbarShow.value = true
+    } else {
+      alert(result?.message || '订阅失败，请稍后重试')
     }
   } catch (e) {
     console.error(componentTag, '订阅失败', e)
+    alert('订阅失败，请检查网络连接')
   }
   subscribing.value.delete(item.tmdbid)
 
@@ -517,6 +568,15 @@ function closeMediaDetail() {
   selectedItem.value = null
 }
 
+/** 关闭插件页面：弹窗开→只关弹窗回列表；否则 emit('close') 通知宿主关闭（PluginDataDialog.vue:198 监听 @close） */
+function closePage() {
+  if (detailOpen.value) {
+    detailOpen.value = false
+    return
+  }
+  emit('close')
+}
+
 /** 跳转到系统原生媒体详情页 */
 function openSystemMediaDetail() {
   if (!selectedItem.value?.tmdbid) return
@@ -571,6 +631,13 @@ onMounted(() => {
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 2rem;
+  inline-size: 100%;
+}
+@media (width < 1024px) {
+  .media-detail-card .media-title > h1 {
+    align-items: center;
+    text-align: center;
+  }
 }
 .media-detail-card .media-attributes {
   display: flex;
@@ -623,13 +690,7 @@ onMounted(() => {
   font-weight: 400;
 }
 @media (width >= 1280px) {
-  .media-detail-card .media-poster { inline-size: 13rem; margin-inline-end: 1rem; }
-  .media-detail-card .media-header { flex-direction: row; align-items: flex-end; }
-  .media-detail-card .media-title { margin-block-start: 0; margin-inline-end: 1rem; text-align: start; }
-  .media-detail-card .media-attributes { justify-content: flex-start; }
-  .media-detail-card .media-actions { justify-content: flex-start; }
-  .media-detail-card .media-overview { flex-direction: row; }
-  .media-detail-card .media-overview-left { margin-inline-end: 2rem; }
+  .media-detail-card .media-poster { inline-size: 13rem; }
   .media-detail-card .media-title > h1 { font-size: 2.25rem; line-height: 2.5rem; }
 }
 .media-detail-card .media-overview-right {
@@ -664,6 +725,12 @@ onMounted(() => {
 }
 @media (width >= 1024px) {
   .media-detail-card .media-overview-right { display: block; inline-size: 16rem; }
+  .media-detail-card .media-overview { flex-direction: row; }
+  .media-detail-card .media-overview-left { margin-inline-end: 2rem; }
+  .media-detail-card .media-header { flex-direction: row; align-items: flex-end; gap: 3rem; }
+  .media-detail-card .media-title { margin-block-start: 0; margin-inline-end: 1rem; text-align: start; }
+  .media-detail-card .media-attributes { justify-content: flex-start; }
+  .media-detail-card .media-actions { justify-content: flex-start; }
 }
 @media (width >= 1280px) {
   .media-detail-card .media-poster { inline-size: 13rem; }
