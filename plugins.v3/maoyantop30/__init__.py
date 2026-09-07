@@ -48,7 +48,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "1.1.3"
+    plugin_version = "1.1.4"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -116,8 +116,10 @@ class MaoyanTop30(_PluginBase):
                 try:
                     result = tmdb_api.search_tvs(title, "")
                     if result:
-                        self.save_data(cache_key, self.__tmdb_result_to_serializable(result[0]))
-                        cached_count += 1
+                        best = self.__best_tmdb_match(title, result)
+                        if best:
+                            self.save_data(cache_key, self.__tmdb_result_to_serializable(best))
+                            cached_count += 1
                 except Exception as e:
                     logger.warning("【预热】TMDB 搜索失败 [%s]: %s", title, e)
             logger.info("【预热】完成，缓存 %d 条 TMDB 结果", cached_count)
@@ -129,6 +131,22 @@ class MaoyanTop30(_PluginBase):
         """生成 TMDB 二级缓存 key（绑定榜单时间戳通过一级缓存失效自动过期）"""
         md5 = hashlib.md5(title.encode("utf-8")).hexdigest()[:12]
         return f"maoyantop30_tmdb_{md5}"
+
+    @staticmethod
+    def __best_tmdb_match(title: str, results: list) -> Optional[dict]:
+        """从 TMDB 搜索结果中选最匹配的条目：精确匹配 > 包含且最短 > 第一条。"""
+        if not results:
+            return None
+        # 精确匹配
+        for r in results:
+            if r.get("name", "") == title:
+                return r
+        # 包含搜索词的条目（选名字最短的，最精确）
+        candidates = [r for r in results if title in r.get("name", "")]
+        if candidates:
+            return min(candidates, key=lambda r: len(r.get("name", "")))
+        # 兜底：取第一条
+        return results[0]
 
     @staticmethod
     def __tmdb_result_to_serializable(tmdb_info: dict) -> dict:
@@ -328,7 +346,7 @@ class MaoyanTop30(_PluginBase):
                     tmdb_api = TmdbApi(language="zh")
                     tmdb_result = tmdb_api.search_tvs(title, "")
                     if tmdb_result and len(tmdb_result) > 0:
-                        tmdb_info = tmdb_result[0]
+                        tmdb_info = self.__best_tmdb_match(title, tmdb_result)
                         try:
                             self.save_data(cache_key, self.__tmdb_result_to_serializable(tmdb_info))
                         except Exception:
