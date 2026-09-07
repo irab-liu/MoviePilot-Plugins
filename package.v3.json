@@ -17,14 +17,14 @@
     "name": "猫眼热度榜",
     "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.1.0": ""
+      "v1.1.2": "新增提醒和清理缓存功能，tmdb识别错误时可点击清理缓存，刷新功能是增量如果有识别错误不会矫正。"
     }
   },
   "MaoyanTop30": {
