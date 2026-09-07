@@ -1234,6 +1234,7 @@ class MaoyanDianYing(_PluginBase):
                     tmdbid = tmdb_info.get("id")
                     if tmdbid:
                         item["tmdbid"] = tmdbid
+                        item["status"] = self._check_media_status(tmdbid, name)
                         actors = self.get_tv_credits(tmdbid)
                         if actors:
                             item["actors"] = actors
