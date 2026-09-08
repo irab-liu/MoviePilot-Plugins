@@ -131,33 +131,6 @@ class TmdbHelper:
             logger.error("TMDB搜索 '%s' 失败: %s", name, e)
         return None
 
-    def get_tv_credits(self, tmdbid: int) -> List[str]:
-        """获取前五位演员（使用 detail 缓存，一次请求获取 cast+first_air_date）。"""
-        try:
-            detail = self.__get_cached_detail(tmdbid)
-            if not detail:
-                api = TmdbApi(language="zh")
-                detail = api.tv.details(tmdbid)
-                if detail:
-                    self.__save_cached_detail(tmdbid, detail)
-            if not detail:
-                return []
-            cast = detail.get("credits", {}).get("cast", [])[:5]
-            actors = []
-            total_chars = 0
-            for c in cast:
-                name = c.get("name", "")
-                if not name:
-                    continue
-                if total_chars + len(name) > 10:
-                    break
-                actors.append(name)
-                total_chars += len(name)
-            return actors
-        except Exception as e:
-            logger.error("TMDB获取演员 %s 失败: %s", tmdbid, e)
-            return []
-
     @staticmethod
     def get_poster_url(poster_path: str) -> str:
         """将 TMDB 海报相对路径转换为 MP 代理 URL；空路径返回空字符串。"""
@@ -177,9 +150,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.0：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.1.2"
+    plugin_version = "1.2.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -197,6 +170,7 @@ class MaoyanDianYing(_PluginBase):
     _tmdb_cache_prefix = "maoyandingyue_tmdb_"
     _status_cache_ttl = 1800  # Status Check 短 TTL 缓存（秒）
     _detail_cache_ttl = 7 * 86400  # TV 详情缓存 TTL（7天）
+    _tmdb_cache_ttl = 7 * 86400  # TMDB 搜索二级缓存 TTL（7天），避免永久积累
 
     def init_plugin(self, config: dict | None = None) -> None:
         """读取配置并建立本次运行所需状态。"""
@@ -205,7 +179,6 @@ class MaoyanDianYing(_PluginBase):
         self._enabled = bool(config.get("enabled", False))
         self._refresh_interval = int(config.get("refresh_interval", 6))
         self._reminder_enabled = bool(config.get("reminder_enabled", False))
-        self._reminder_time = config.get("reminder_time", 9)
         self._reminder_msgtype = config.get("reminder_msgtype", "Plugin")
         self._subscribe_oper = SubscribeOper()
         self._media_oper = MediaServerOper()
@@ -287,7 +260,7 @@ class MaoyanDianYing(_PluginBase):
                             "first_air_date": media_info.first_air_date,
                             "media_type": "TV",
                         }
-                        self.save_data(cache_key, result)
+                        self.__save_cached_tmdb(title, result)
                         cached_count += 1
                 except Exception as e:
                     logger.warning("【预热】TMDB 搜索失败 [%s]: %s", title, e)
@@ -312,21 +285,26 @@ class MaoyanDianYing(_PluginBase):
         return result
 
     def __get_cached_tmdb(self, title: str) -> Optional[dict]:
-        """从二级缓存读取 TMDB 数据"""
+        """从二级缓存读取 TMDB 数据（7 天 TTL；旧版无 ts 字段的数据视为过期，避免永久积累）"""
         cache_key = self.__tmdb_cache_key(title)
         try:
             cached = self.get_data(cache_key)
             if cached and isinstance(cached, dict):
-                return cached
+                ts = cached.get("ts")
+                if ts is not None and time.time() - ts < self._tmdb_cache_ttl:
+                    return cached
         except Exception:
             pass
         return None
 
     def __save_cached_tmdb(self, title: str, tmdb_info: dict) -> None:
-        """保存 TMDB 数据到二级缓存"""
+        """保存 TMDB 数据到二级缓存（带 ts 时间戳，7 天 TTL）"""
         cache_key = self.__tmdb_cache_key(title)
         try:
-            self.save_data(cache_key, self.__tmdb_result_to_serializable(tmdb_info))
+            data = self.__tmdb_result_to_serializable(tmdb_info)
+            if isinstance(data, dict):
+                data["ts"] = time.time()
+            self.save_data(cache_key, data)
         except Exception:
             pass
 
@@ -488,10 +466,10 @@ class MaoyanDianYing(_PluginBase):
         return []
 
     def get_service(self) -> list[dict]:
-        """插件启用时注册周期刷新任务与今日上新提醒；停用时不向宿主注册任何服务。"""
+        """插件启用时注册周期刷新任务；通知随自动刷新触发，不再单独注册定时任务。"""
         if not self.get_state():
             return []
-        services = [
+        return [
             {
                 "id": "MaoyanDianYing.AutoRefresh",
                 "name": "猫眼热度榜自动刷新",
@@ -500,25 +478,6 @@ class MaoyanDianYing(_PluginBase):
                 "kwargs": {},
             }
         ]
-        # 今日上新提醒：开启提醒且小时合法时注册每日定时推送（APScheduler 按 service id 去重）
-        if getattr(self, "_reminder_enabled", False):
-            try:
-                hour = int(getattr(self, "_reminder_time", 9))
-            except (TypeError, ValueError):
-                hour = -1
-            if 0 <= hour <= 23:
-                from apscheduler.triggers.cron import CronTrigger
-                services.append({
-                    "id": "MaoyanDianYing.DailyRemind",
-                    "name": "猫眼热度榜今日上新提醒",
-                    "trigger": CronTrigger.from_crontab(f"0 {hour} * * *"),
-                    "func": self.__send_remind,
-                    "kwargs": {},
-                })
-            else:
-                logger.warning("【今日上新提醒】reminder_time 非法: %r，跳过注册定时任务",
-                               getattr(self, "_reminder_time", 9))
-        return services
 
     def get_api(self) -> list[dict[str, Any]]:
         """注册后端 API。"""
@@ -721,18 +680,7 @@ class MaoyanDianYing(_PluginBase):
                         "component": "VSwitch",
                         "props": {
                             "model": "reminder_enabled",
-                            "label": "今日上新提醒",
-                        },
-                    },
-                    {
-                        "component": "VSelect",
-                        "props": {
-                            "model": "reminder_time",
-                            "label": "提醒时间（小时）",
-                            "items": [
-                                {"title": f"{hour}点", "value": hour}
-                                for hour in range(24)
-                            ],
+                            "label": "开启通知",
                         },
                     },
                     {
@@ -754,7 +702,7 @@ class MaoyanDianYing(_PluginBase):
                             "density": "compact",
                             "class": "mt-3",
                         },
-                        "text": "启用后，系统会按设定间隔自动抓取猫眼榜单。有 TMDB 数据的条目不会重复获取。",
+                        "text": "开启通知后，系统会在每次自动刷新后检查今日新增影片并推送，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。",
                     },
                 ],
             }
@@ -762,7 +710,6 @@ class MaoyanDianYing(_PluginBase):
             "enabled": False,
             "refresh_interval": 6,
             "reminder_enabled": False,
-            "reminder_time": 9,
             "reminder_msgtype": "Plugin",
             "run_remind": False,
         }
@@ -896,34 +843,65 @@ class MaoyanDianYing(_PluginBase):
             logger.warning("【添加订阅】回写缓存失败：%s", e)
 
     def clear_cache(self):
-        """API：清理所有插件缓存数据（TMDB、猫眼抓取数据等），保留提醒数据，并重新抓取。"""
+        """API：清理全部插件缓存（TMDB 搜索/状态/演员/详情/主数据/通知推送记录），
+        并静默重建（不触发通知推送）。"""
         try:
-            protected = {"maoyandingyue_remind"}
             all_items = self.get_data() or []
+            stats = {
+                "maoyandingyue_data": 0,
+                "maoyandingyue_tmdb_": 0,
+                "maoyandingyue_status_": 0,
+                "maoyandingyue_cast_": 0,
+                "maoyandingyue_detail_": 0,
+                "maoyandingyue_remind": 0,
+                "other": 0,
+            }
             removed = 0
             for item in all_items:
                 key = item.key
-                if key in protected:
-                    continue
                 self.del_data(key)
                 removed += 1
-            logger.info("【清理缓存】已清理 %d 个缓存项，开始重新抓取", removed)
-            # 重新抓取数据
+                if key == self._cache_key:
+                    stats["maoyandingyue_data"] += 1
+                elif key.startswith("maoyandingyue_tmdb_"):
+                    stats["maoyandingyue_tmdb_"] += 1
+                elif key.startswith("maoyandingyue_status_"):
+                    stats["maoyandingyue_status_"] += 1
+                elif key.startswith("maoyandingyue_cast_"):
+                    stats["maoyandingyue_cast_"] += 1
+                elif key.startswith("maoyandingyue_detail_"):
+                    stats["maoyandingyue_detail_"] += 1
+                elif key == "maoyandingyue_remind":
+                    stats["maoyandingyue_remind"] += 1
+                else:
+                    stats["other"] += 1
+            logger.info("【清理缓存】已清理 %d 个缓存项（tmdb=%d, status=%d, cast=%d, detail=%d, 主数据=%d, 通知记录=%d%s），开始静默重建",
+                        removed, stats["maoyandingyue_tmdb_"], stats["maoyandingyue_status_"],
+                        stats["maoyandingyue_cast_"], stats["maoyandingyue_detail_"], stats["maoyandingyue_data"],
+                        stats["maoyandingyue_remind"],
+                        f"，其他={stats['other']}" if stats["other"] else "")
+            # 静默重建：不触发今日新增通知
             try:
-                self._auto_refresh()
-                msg = f"已清理 {removed} 个缓存项，并重新抓取最新数据"
+                self._auto_refresh(notify=False)
+                detail = (f"TMDB搜索 {stats['maoyandingyue_tmdb_']} 个、状态 {stats['maoyandingyue_status_']} 个、"
+                          f"演员 {stats['maoyandingyue_cast_']} 个、详情 {stats['maoyandingyue_detail_']} 个、"
+                          f"主数据 {stats['maoyandingyue_data']} 个、通知推送记录 {stats['maoyandingyue_remind']} 个")
+                msg = f"已清理 {removed} 个缓存项（{detail}），并重新抓取最新数据"
             except Exception as e:
                 logger.error("【清理缓存】重新抓取失败: %s", e)
                 msg = f"已清理 {removed} 个缓存项，但重新抓取失败：{e}"
-            return {"success": True, "message": msg, "data": {"count": removed}}
+            return {"success": True, "message": msg, "data": {"count": removed, "stats": stats}}
         except Exception as e:
             logger.error("【清理缓存】失败: %s", e)
             return {"success": False, "message": str(e)}
 
-    def __send_remind(self, force: bool = False) -> None:
-        """每日定时任务：遍历猫眼热度榜 TOP30，推送今日上新（first_air_date/release_date == 今天）的剧集。
-        
-        :param force: True 时绕过 reminder_enabled 开关检查（用于手动触发）。
+    def __send_remind(self, force: bool = False, heat_list: Optional[list] = None) -> None:
+        """通知：遍历猫眼热度榜，推送今日上新（first_air_date/release_date == 今天）的剧集。
+
+        - force=False（自动）：随自动刷新触发，仅当“开启通知”开启时执行；
+          只推送今天尚未推送过的影片，没有未推送项时静默（不发 TOP5）。
+        - force=True（手动“立即运行一次提醒”）：绕过“开启通知”开关；
+          今日有新增则推送，没有今日新增时推送 TOP5 + TOP1 封面。
         """
         try:
             logger.info("【今日上新提醒】任务启动，enabled=%s, msgtype=%s, force=%s",
@@ -934,7 +912,7 @@ class MaoyanDianYing(_PluginBase):
                 logger.info("【今日上新提醒】插件未启用，跳过")
                 return
             if not force and not getattr(self, "_reminder_enabled", False):
-                logger.info("【今日上新提醒】提醒开关未开启，跳过")
+                logger.info("【今日上新提醒】通知开关未开启，跳过")
                 return
             from app.schemas.types import MessageType
             msgtype_name = str(getattr(self, "_reminder_msgtype", "Plugin") or "Plugin")
@@ -943,7 +921,17 @@ class MaoyanDianYing(_PluginBase):
             except (KeyError, TypeError):
                 mtype = MessageType.Manual
             today = datetime.now().date().isoformat()
-            heat_list = MaoyanScraper.fetch_heat_list()
+
+            # 已推送记录：仅当记录日期是今天时才生效（跨天自动重置）
+            record = self.get_data("maoyandingyue_remind") or {}
+            sent_ids = set()
+            if isinstance(record, dict) and record.get("date") == today:
+                raw = record.get("sent_items") or []
+                sent_ids = {str(x) for x in raw}
+
+            if heat_list is None:
+                heat_list = MaoyanScraper.fetch_heat_list()
+
             hits = []
             for item in heat_list or []:
                 if not item or not item.get("name"):
@@ -952,16 +940,37 @@ class MaoyanDianYing(_PluginBase):
                     hits.append(item)
             logger.info("【今日上新提醒】扫描 %d 条热度榜条目，今日上新 %d 条",
                         len(heat_list or []), len(hits))
-            if hits:
+
+            def _send_id(item: dict) -> str:
+                """推送去重标识：优先 TMDB ID，无 TMDB 数据时用名称兜底。"""
+                try:
+                    tmdb_info = self.__search_tmdb_with_cache(item.get("name", ""))
+                    if tmdb_info and tmdb_info.get("id"):
+                        return f"tmdb:{tmdb_info.get('id')}"
+                except Exception:
+                    pass
+                return f"name:{item.get('name', '')}"
+
+            if force:
+                # 手动模式：全部今日新增都推送（便于手动测试），成功后同步写入去重记录
+                pending = hits
+                send_top5 = not hits
+            else:
+                # 自动模式：只推送尚未推送过的，无未推送项时静默
+                pending = [h for h in hits if _send_id(h) not in sent_ids]
+                send_top5 = False
+
+            if pending:
                 # 仿 IrabSubscribeReminder 图文消息：拼装图片列表 + 文字，每 8 条一批带图推送
                 images = []
                 lines = []
-                for hit in hits:
+                for hit in pending:
                     name = hit.get("name", "")
                     platform = hit.get("platform", "")
                     line = f"📺 {hit.get('rank', 0)}. 《{name}》"
                     if platform:
                         line += f"（{platform}）"
+                    line += self.__notify_status_tag(hit)
                     lines.append(line)
                     # 从 TMDB 缓存拿海报（__is_today_new 已经搜过，命中缓存）
                     poster_path = ""
@@ -992,9 +1001,12 @@ class MaoyanDianYing(_PluginBase):
                         text="\n".join(lines),
                         image=random.choice(images) if images else None,
                     )
-                logger.info("【今日上新提醒】推送完成，今日上新 %d 条", len(hits))
-            else:
-                # 今日无新增：推送 TOP5 + TOP1 封面
+                logger.info("【今日上新提醒】推送完成，今日上新 %d 条", len(pending))
+                # 推送成功后记录（手动也会写入，避免随后自动刷新重复推送）
+                for hit in pending:
+                    sent_ids.add(_send_id(hit))
+            elif send_top5:
+                # 仅手动模式且今日无新增：推送 TOP5 + TOP1 封面
                 top5 = (heat_list or [])[:5]
                 top1_image = None
                 lines = ["今日无新增，为您推荐猫眼热度 TOP5："]
@@ -1005,6 +1017,7 @@ class MaoyanDianYing(_PluginBase):
                     line = f"📺 {rank}. 《{name}》"
                     if platform:
                         line += f"（{platform}）"
+                    line += self.__notify_status_tag(item)
                     lines.append(line)
                     # 取 TOP1 封面
                     if rank == 1 and not top1_image:
@@ -1026,9 +1039,12 @@ class MaoyanDianYing(_PluginBase):
                     image=top1_image,
                 )
                 logger.info("【今日上新提醒】今日无新增，推送 TOP5 推荐")
+            else:
+                logger.info("【今日上新提醒】无未推送的今日新增，本次不推送")
+
             self.save_data("maoyandingyue_remind", {
                 "date": today,
-                "count": len(hits),
+                "count": len(pending),
                 "items": [
                     {
                         "rank": hit.get("rank", 0),
@@ -1037,10 +1053,27 @@ class MaoyanDianYing(_PluginBase):
                     }
                     for hit in hits
                 ],
+                "sent_items": sorted(sent_ids),
                 "last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
         except Exception as e:
             logger.error("【今日上新提醒】执行失败: %s", e)
+
+    def __notify_status_tag(self, item: dict) -> str:
+        """通知行附注订阅状态：【已订阅】/【未订阅】（基于媒体库/整理记录/订阅判断）。
+
+        映射：影片已入库、订阅已添加 -> 【已订阅】；未添加订阅 -> 【未订阅】。
+        """
+        try:
+            name = item.get("name", "")
+            tmdbid = item.get("tmdbid") or 0
+            if not tmdbid:
+                tmdb_info = self.__search_tmdb_with_cache(name)
+                tmdbid = (tmdb_info or {}).get("id") or 0
+            status = self._check_media_status(tmdbid, name)
+            return "【未订阅】" if status == "未添加订阅" else "【已订阅】"
+        except Exception:
+            return ""
 
     def __is_today_new(self, item: dict) -> bool:
         """判定榜单条目是否为今日上新：TMDB first_air_date 与今天相等。
@@ -1075,8 +1108,11 @@ class MaoyanDianYing(_PluginBase):
                          (item or {}).get("name", ""), e)
             return False
 
-    def _auto_refresh(self):
-        """定时自动刷新：抓取榜单，仅对新条目获取 TMDB 数据。"""
+    def _auto_refresh(self, notify: bool = True):
+        """定时自动刷新：抓取榜单，仅对新条目获取 TMDB 数据。
+
+        :param notify: 刷新完成后是否触发今日新增通知（清理缓存等静默重建时传 False）。
+        """
         logger.info("【定时刷新】开始...")
         try:
             heat_list = MaoyanScraper.fetch_heat_list()
@@ -1124,6 +1160,11 @@ class MaoyanDianYing(_PluginBase):
             }
             self.save_data(self._cache_key, result)
             logger.info("【定时刷新】完成，共 %d 条，其中 %d 条为新获取 TMDB", len(enriched), new_count)
+            # 自动通知：随每次自动刷新触发（内部按“开启通知”开关和去重记录决定是否推送）
+            if notify:
+                self.__send_remind(force=False, heat_list=enriched)
+            else:
+                logger.info("【定时刷新】静默重建（清理缓存触发），不发送通知")
         except Exception as e:
             logger.error("【定时刷新】失败: %s", e)
 

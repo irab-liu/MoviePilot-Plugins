@@ -63,9 +63,26 @@ app.modules = _make_module('app.modules')
 app.modules.themoviedb = _make_module('app.modules.themoviedb')
 app.modules.themoviedb.tmdbapi = _make_module('app.modules.themoviedb.tmdbapi', {'TmdbApi': type('TmdbApi', (), {'search_tv': staticmethod(lambda *a, **k: [])})()})
 app.sdk = _make_module('app.sdk')
+app.sdk.network = _make_module('app.sdk.network', {'RequestUtils': MagicMock})
 app.sdk.logging = _make_module('app.sdk.logging', {'logger': MagicMock()})
+
+class EventType(Enum):
+    SubscribeAdded = 'SubscribeAdded'
+    SubscribeModified = 'SubscribeModified'
+    SubscribeDeleted = 'SubscribeDeleted'
+
+class Event:
+    def __init__(self, event_data=None):
+        self.event_data = event_data or {}
+
+class _EventManager:
+    @staticmethod
+    def register(_event_type):
+        return lambda func: func
+
+app.sdk.events = _make_module('app.sdk.events', {'Event': Event, 'eventmanager': _EventManager()})
 app.schemas = _make_module('app.schemas')
-app.schemas.types = _make_module('app.schemas.types', {'MediaType': MediaType})
+app.schemas.types = _make_module('app.schemas.types', {'MediaType': MediaType, 'EventType': EventType, 'MessageType': Enum('MessageType', {'Plugin': '插件', 'Manual': '手动处理'})})
 
 # 3. 添加 plugins.v3 目录到 sys.path 并导入真实插件
 v3_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'plugins.v3'))
