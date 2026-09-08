@@ -47,13 +47,13 @@
 
     <VDivider />
 
-    <!-- 提醒设置 -->
+    <!-- 通知设置 -->
     <VCardText class="py-4">
-      <div class="text-subtitle-2 mb-3 grey--text">提醒设置</div>
+      <div class="text-subtitle-2 mb-3 grey--text">通知设置</div>
       <div class="d-flex flex-wrap gap-3 mb-3">
         <VSwitch
           v-model="form.reminder_enabled"
-          label="今日上新提醒"
+          label="开启通知"
           color="primary"
           hide-details
           density="compact"
@@ -66,26 +66,18 @@
           density="compact"
         />
       </div>
-      <div class="d-flex flex-wrap gap-3">
-        <VSelect
-          v-model="form.reminder_time"
-          :items="hourItems"
-          label="提醒时间"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 160px"
-        />
-        <VSelect
-          v-model="form.reminder_msgtype"
-          :items="msgtypeItems"
-          label="消息类型"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 160px"
-        />
+      <div class="text-caption grey--text mb-3" style="max-width: 560px">
+        根据插件设置的自动刷新间隔推送今日新增影片，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。
       </div>
+      <VSelect
+        v-model="form.reminder_msgtype"
+        :items="msgtypeItems"
+        label="消息类型"
+        variant="outlined"
+        density="compact"
+        hide-details
+        style="max-width: 160px"
+      />
     </VCardText>
 
     <VDivider />
@@ -125,12 +117,6 @@ const intervalItems = [
   { title: '24小时', value: 24 },
 ]
 
-// 提醒时间（0-23 整点，value 使用字符串与后端默认 '9' 对齐）
-const hourItems = Array.from({ length: 24 }, (_, h) => ({
-  title: `${h}时`,
-  value: String(h),
-}))
-
 // 提醒消息类型：与后端 get_form 对齐（NotificationType/MessageType 枚举，
 // value 为枚举成员名，title 为中文名；同 irabsubscribereminder 的 msgtype 选项）
 const msgtypeItems = [
@@ -150,7 +136,6 @@ const form = reactive({
   enabled: false,
   refresh_interval: 6,
   reminder_enabled: false,
-  reminder_time: '9',
   reminder_msgtype: 'Plugin',
   run_remind: false,
 })
@@ -166,7 +151,7 @@ async function clearCache() {
     alert('API 未就绪，请刷新页面重试')
     return
   }
-  if (!confirm('确定要清理所有缓存数据吗？（保留提醒数据）并重新抓取新数据。')) {
+  if (!confirm('确定要清理所有缓存数据吗？将清空 TMDB 搜索、状态、演员、详情、通知推送记录等缓存并重新抓取新数据。')) {
     return
   }
   clearingCache.value = true
@@ -193,12 +178,6 @@ watch(
     form.enabled = Boolean(config.enabled)
     form.refresh_interval = Number(config.refresh_interval) || 6
     form.reminder_enabled = Boolean(config.reminder_enabled)
-    form.reminder_time =
-      config.reminder_time !== undefined &&
-      config.reminder_time !== null &&
-      config.reminder_time !== ''
-        ? String(config.reminder_time)
-        : '9'
     form.reminder_msgtype = config.reminder_msgtype
       ? String(config.reminder_msgtype)
       : 'Plugin'

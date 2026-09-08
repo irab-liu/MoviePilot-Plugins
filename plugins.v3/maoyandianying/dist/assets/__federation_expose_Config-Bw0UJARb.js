@@ -2,11 +2,10 @@ import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,withCtx:_withCtx,createTextVNode:_createTextVNode,unref:_unref,openBlock:_openBlock,createBlock:_createBlock} = await importShared('vue');
+const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,withCtx:_withCtx,createTextVNode:_createTextVNode,openBlock:_openBlock,createBlock:_createBlock} = await importShared('vue');
 
 const _hoisted_1 = { class: "d-flex flex-wrap gap-3 mb-3" };
 const _hoisted_2 = { class: "d-flex flex-wrap gap-3 mb-3" };
-const _hoisted_3 = { class: "d-flex flex-wrap gap-3" };
 const {reactive,ref,watch} = await importShared('vue');
 
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -28,10 +27,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       { title: "12小时", value: 12 },
       { title: "24小时", value: 24 }
     ];
-    const hourItems = Array.from({ length: 24 }, (_, h) => ({
-      title: `${h}时`,
-      value: String(h)
-    }));
     const msgtypeItems = [
       { title: "资源下载", value: "Download" },
       { title: "整理入库", value: "Organize" },
@@ -47,7 +42,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       enabled: false,
       refresh_interval: 6,
       reminder_enabled: false,
-      reminder_time: "9",
       reminder_msgtype: "Plugin",
       run_remind: false
     });
@@ -61,7 +55,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         alert("API 未就绪，请刷新页面重试");
         return;
       }
-      if (!confirm("确定要清理所有缓存数据吗？（保留提醒数据）并重新抓取新数据。")) {
+      if (!confirm("确定要清理所有缓存数据吗？将清空 TMDB 搜索、状态、演员、详情、通知推送记录等缓存并重新抓取新数据。")) {
         return;
       }
       clearingCache.value = true;
@@ -86,7 +80,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         form.enabled = Boolean(config.enabled);
         form.refresh_interval = Number(config.refresh_interval) || 6;
         form.reminder_enabled = Boolean(config.reminder_enabled);
-        form.reminder_time = config.reminder_time !== void 0 && config.reminder_time !== null && config.reminder_time !== "" ? String(config.reminder_time) : "9";
         form.reminder_msgtype = config.reminder_msgtype ? String(config.reminder_msgtype) : "Plugin";
         form.run_remind = Boolean(config.run_remind);
       },
@@ -120,7 +113,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "mr-2",
                 color: "primary"
               }),
-              _cache[7] || (_cache[7] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
+              _cache[6] || (_cache[6] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
               _createVNode(_component_VSpacer),
               _createVNode(_component_VBtn, {
                 icon: "mdi-close",
@@ -134,7 +127,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[10] || (_cache[10] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
+              _cache[9] || (_cache[9] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
               _createElementVNode("div", _hoisted_1, [
                 _createVNode(_component_VSwitch, {
                   modelValue: form.enabled,
@@ -156,12 +149,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       start: "",
                       size: "small"
                     }, {
-                      default: _withCtx(() => [..._cache[8] || (_cache[8] = [
+                      default: _withCtx(() => [..._cache[7] || (_cache[7] = [
                         _createTextVNode("mdi-delete-sweep", -1)
                       ])]),
                       _: 1
                     }),
-                    _cache[9] || (_cache[9] = _createTextVNode(" 清理缓存 ", -1))
+                    _cache[8] || (_cache[8] = _createTextVNode(" 清理缓存 ", -1))
                   ]),
                   _: 1
                 }, 8, ["loading"])
@@ -184,12 +177,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "提醒设置", -1)),
+              _cache[10] || (_cache[10] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "通知设置", -1)),
               _createElementVNode("div", _hoisted_2, [
                 _createVNode(_component_VSwitch, {
                   modelValue: form.reminder_enabled,
                   "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => form.reminder_enabled = $event),
-                  label: "今日上新提醒",
+                  label: "开启通知",
                   color: "primary",
                   "hide-details": "",
                   density: "compact"
@@ -203,28 +196,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   density: "compact"
                 }, null, 8, ["modelValue"])
               ]),
-              _createElementVNode("div", _hoisted_3, [
-                _createVNode(_component_VSelect, {
-                  modelValue: form.reminder_time,
-                  "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.reminder_time = $event),
-                  items: _unref(hourItems),
-                  label: "提醒时间",
-                  variant: "outlined",
-                  density: "compact",
-                  "hide-details": "",
-                  style: { "max-width": "160px" }
-                }, null, 8, ["modelValue", "items"]),
-                _createVNode(_component_VSelect, {
-                  modelValue: form.reminder_msgtype,
-                  "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => form.reminder_msgtype = $event),
-                  items: msgtypeItems,
-                  label: "消息类型",
-                  variant: "outlined",
-                  density: "compact",
-                  "hide-details": "",
-                  style: { "max-width": "160px" }
-                }, null, 8, ["modelValue"])
-              ])
+              _cache[11] || (_cache[11] = _createElementVNode("div", {
+                class: "text-caption grey--text mb-3",
+                style: { "max-width": "560px" }
+              }, " 根据插件设置的自动刷新间隔推送今日新增影片，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。 ", -1)),
+              _createVNode(_component_VSelect, {
+                modelValue: form.reminder_msgtype,
+                "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.reminder_msgtype = $event),
+                items: msgtypeItems,
+                label: "消息类型",
+                variant: "outlined",
+                density: "compact",
+                "hide-details": "",
+                style: { "max-width": "160px" }
+              }, null, 8, ["modelValue"])
             ]),
             _: 1
           }),

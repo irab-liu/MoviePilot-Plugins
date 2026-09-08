@@ -147,41 +147,48 @@ class TestStopService:
 class TestMaoyanScraper:
     """MaoyanScraper.fetch_heat_list 抓取猫眼热度列表"""
 
-    @patch("app.plugins.maoyandianying.requests.get")
-    def test_fetch_heat_list_success(self, mock_get):
+    @patch("app.plugins.maoyandianying.RequestUtils")
+    def test_fetch_heat_list_success(self, mock_ru_cls):
         from app.plugins.maoyandianying import MaoyanScraper
         fake_html = 'AppData = {"pageData":{"webHeatData":[{"seriesInfo":{"name":"剧集1","platformDesc":"爱奇艺","releaseInfo":"上映1天"},"playCountSplitUnit":{"num":"1.2","unit":"亿"},"currHeat":1000}]}};'
+        mock_ru = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.ok = True
         mock_resp.text = fake_html
-        mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_ru.get_res.return_value = mock_resp
+        mock_ru_cls.return_value = mock_ru
 
         result = MaoyanScraper.fetch_heat_list()
         assert len(result) == 1
         assert result[0]["name"] == "剧集1"
         assert result[0]["heat"] == 1000
+        mock_ru_cls.assert_called_once_with(headers=MaoyanScraper.HEADERS, timeout=15)
 
-    @patch("app.plugins.maoyandianying.requests.get")
-    def test_fetch_heat_list_no_appdata(self, mock_get):
+    @patch("app.plugins.maoyandianying.RequestUtils")
+    def test_fetch_heat_list_no_appdata(self, mock_ru_cls):
         """页面无 AppData 时抛出 ValueError"""
         from app.plugins.maoyandianying import MaoyanScraper
+        mock_ru = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.ok = True
         mock_resp.text = "<html>no data</html>"
-        mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_ru.get_res.return_value = mock_resp
+        mock_ru_cls.return_value = mock_ru
 
         with pytest.raises(ValueError, match="未能从猫眼页面提取 AppData"):
             MaoyanScraper.fetch_heat_list()
 
-    @patch("app.plugins.maoyandianying.requests.get")
-    def test_fetch_heat_list_request_failure(self, mock_get):
+    @patch("app.plugins.maoyandianying.RequestUtils")
+    def test_fetch_heat_list_request_failure(self, mock_ru_cls):
         """请求失败时抛出异常"""
         from app.plugins.maoyandianying import MaoyanScraper
-        mock_get.side_effect = Exception("Connection refused")
+        mock_ru = MagicMock()
+        mock_ru.get_res.return_value = None
+        mock_ru_cls.return_value = mock_ru
 
-        with pytest.raises(Exception, match="Connection refused"):
+        with pytest.raises(ConnectionError, match="猫眼热度列表请求失败"):
             MaoyanScraper.fetch_heat_list()
 
 
@@ -219,36 +226,45 @@ class TestTmdbHelper:
 
     @patch("app.plugins.maoyandianying.TmdbApi")
     def test_get_tv_credits_success(self, mock_tmdb_cls):
-        from app.plugins.maoyandianying import TmdbHelper
+        from app.plugins.maoyandianying import MaoyanDianYing
+        plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.credits.return_value = {
-            "cast": [{"name": "演员1"}, {"name": "演员2"}, {"name": "演员3"}]
+        mock_api.tv.details.return_value = {
+            "credits": {"cast": [{"name": "演员1"}, {"name": "演员2"}, {"name": "演员3"}]}
         }
         mock_tmdb_cls.return_value = mock_api
 
-        result = TmdbHelper.get_tv_credits(123)
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"):
+            result = plugin.get_tv_credits(123)
         assert len(result) == 3
         assert result[0] == "演员1"
 
     @patch("app.plugins.maoyandianying.TmdbApi")
     def test_get_tv_credits_char_limit(self, mock_tmdb_cls):
         """演员名称总长度限制在 10 个字符内"""
-        from app.plugins.maoyandianying import TmdbHelper
+        from app.plugins.maoyandianying import MaoyanDianYing
+        plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.credits.return_value = {
-            "cast": [{"name": "ABCDEF"}, {"name": "GHIJKL"}, {"name": "MN"}]
+        mock_api.tv.details.return_value = {
+            "credits": {"cast": [{"name": "ABCDEF"}, {"name": "GHIJKL"}, {"name": "MN"}]}
         }
         mock_tmdb_cls.return_value = mock_api
 
-        result = TmdbHelper.get_tv_credits(123)
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"):
+            result = plugin.get_tv_credits(123)
         assert len(result) == 1
 
     @patch("app.plugins.maoyandianying.TmdbApi")
     def test_get_tv_credits_exception(self, mock_tmdb_cls):
-        from app.plugins.maoyandianying import TmdbHelper
+        from app.plugins.maoyandianying import MaoyanDianYing
+        plugin = _make_plugin()
         mock_tmdb_cls.side_effect = Exception("API error")
 
-        result = TmdbHelper.get_tv_credits(123)
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"):
+            result = plugin.get_tv_credits(123)
         assert result == []
 
     def test_get_poster_url_empty(self):
@@ -261,7 +277,13 @@ class TestTmdbHelper:
 
     def test_get_poster_url_relative_path(self):
         from app.plugins.maoyandianying import TmdbHelper
-        assert TmdbHelper.get_poster_url("/test.jpg") == "https://image.tmdb.org/t/p/w500/test.jpg"
+        assert TmdbHelper.get_poster_url("/test.jpg") == \
+            "/api/v1/system/img/1?imgurl=https://image.tmdb.org/t/p/w500/test.jpg"
+
+    def test_get_poster_url_tmdb_url_proxied(self):
+        from app.plugins.maoyandianying import TmdbHelper
+        assert TmdbHelper.get_poster_url("https://image.tmdb.org/t/p/w500/test.jpg") == \
+            "/api/v1/system/img/1?imgurl=https://image.tmdb.org/t/p/w500/test.jpg"
 
 
 class TestCheckMediaStatus:
@@ -409,7 +431,7 @@ class TestAutoRefresh:
 
     @patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list")
     @patch("app.plugins.maoyandianying.MaoyanDianYing._MaoyanDianYing__search_tmdb_with_cache")
-    @patch("app.plugins.maoyandianying.TmdbHelper.get_tv_credits")
+    @patch("app.plugins.maoyandianying.MaoyanDianYing.get_tv_credits")
     def test_auto_refresh_new_item(self, mock_credits, mock_search, mock_fetch):
         """新条目获取 TMDB 数据"""
         plugin = _make_plugin()
@@ -440,7 +462,7 @@ class TestRefreshTmdb:
     """refresh_tmdb 刷新 TMDB 数据"""
 
     @patch("app.plugins.maoyandianying.MaoyanDianYing._MaoyanDianYing__search_tmdb_with_cache")
-    @patch("app.plugins.maoyandianying.TmdbHelper.get_tv_credits")
+    @patch("app.plugins.maoyandianying.MaoyanDianYing.get_tv_credits")
     def test_refresh_tmdb_success(self, mock_credits, mock_search):
         plugin = _make_plugin()
         cached = {
@@ -511,10 +533,14 @@ class TestGetCast:
     def test_get_cast_success(self, mock_tmdb_cls):
         plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.credits.return_value = {"cast": [{"name": "演员1"}, {"name": "演员2"}]}
+        mock_api.tv.details.return_value = {
+            "credits": {"cast": [{"name": "演员1"}, {"name": "演员2"}]}
+        }
         mock_tmdb_cls.return_value = mock_api
 
-        result = plugin.get_cast(tmdbid=123)
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"):
+            result = plugin.get_cast(tmdbid=123)
         assert result["success"] is True
         assert len(result["data"]) == 2
 
@@ -531,7 +557,7 @@ class TestRunOnce:
 
     @patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list")
     @patch("app.plugins.maoyandianying.MaoyanDianYing._MaoyanDianYing__search_tmdb_with_cache")
-    @patch("app.plugins.maoyandianying.TmdbHelper.get_tv_credits")
+    @patch("app.plugins.maoyandianying.MaoyanDianYing.get_tv_credits")
     def test_run_once_success(self, mock_credits, mock_search, mock_fetch):
         plugin = _make_plugin()
         mock_fetch.return_value = [_make_heat_item(name="剧集1")]
@@ -542,7 +568,10 @@ class TestRunOnce:
             result = plugin.run_once()
             assert result["success"] is True
             assert result["data"]["total"] == 1
-            mock_save.assert_called_once()
+            # run_once 会保存 status 缓存（maoyandingyue_status_xxx）与主数据缓存
+            keys = [c.args[0] for c in mock_save.call_args_list]
+            assert "maoyandingyue_data" in keys
+            assert any(k.startswith("maoyandingyue_status_") for k in keys)
 
     @patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list")
     def test_run_once_fetch_failure(self, mock_fetch):
@@ -613,7 +642,7 @@ class TestP0_2_SerializableFix:
              patch.object(plugin, "save_data", side_effect=mock_save), \
              patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list") as mock_fetch, \
              patch("app.plugins.maoyandianying.MaoyanDianYing._MaoyanDianYing__search_tmdb_with_cache", return_value=fake_tmdb), \
-             patch("app.plugins.maoyandianying.TmdbHelper.get_tv_credits", return_value=[]):
+             patch("app.plugins.maoyandianying.MaoyanDianYing.get_tv_credits", return_value=[]):
             mock_fetch.return_value = [_make_heat_item(name="测试")]
             plugin._auto_refresh()
 
@@ -667,3 +696,213 @@ class TestP1_2_HotReloadIdempotent:
 
         # 第一次: warmup + auto_refresh = 2; 第二、三次: 仅 auto_refresh = 1+1; 总计 4
         assert thread_count[0] <= 4
+
+
+# ---------- 通知逻辑调整 ----------
+
+class TestReminderIntervalNotification:
+    def test_reminder_enabled_does_not_register_separate_cron(self):
+        plugin = _make_plugin(enabled=True, interval=6)
+        plugin._reminder_enabled = True
+        services = plugin.get_service()
+        assert len(services) == 1
+        assert services[0]["id"] == "MaoyanDianYing.AutoRefresh"
+
+    @patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list")
+    def test_auto_refresh_passes_refreshed_rows_to_notification(self, mock_fetch):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = True
+        row = _make_heat_item(name="新剧集")
+        mock_fetch.return_value = [row]
+        with patch("app.plugins._PluginBase.get_data", return_value=None), \
+             patch.object(plugin, "save_data"), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache", return_value=None), \
+             patch.object(plugin, "_MaoyanDianYing__send_remind") as mock_remind:
+            plugin._auto_refresh()
+            mock_remind.assert_called_once()
+            assert mock_remind.call_args.kwargs["heat_list"][0]["name"] == "新剧集"
+
+    def test_auto_notification_filters_already_sent_items(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = True
+        plugin._reminder_msgtype = "Plugin"
+        items = [_make_heat_item(name="剧集0"), _make_heat_item(name="剧集1", rank=2)]
+        plugin.post_message = MagicMock()
+
+        def search(name):
+            return {"id": 1 if name == "剧集0" else 2, "poster_path": "/test.jpg"}
+
+        with patch.object(plugin, "get_data", return_value={"date": datetime.now().date().isoformat(), "sent_items": ["tmdb:1"]}), \
+             patch.object(plugin, "save_data") as mock_save, \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=True), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache", side_effect=search):
+            plugin._MaoyanDianYing__send_remind(force=False, heat_list=items)
+
+        plugin.post_message.assert_called_once()
+        text = plugin.post_message.call_args.kwargs["text"]
+        assert "剧集1" in text
+        assert "剧集0" not in text
+        saved = mock_save.call_args_list[-1].args[1]
+        assert set(saved["sent_items"]) == {"tmdb:1", "tmdb:2"}
+
+    def test_auto_notification_is_silent_when_all_items_sent(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = True
+        plugin._reminder_msgtype = "Plugin"
+        item = _make_heat_item(name="剧集0")
+        plugin.post_message = MagicMock()
+        with patch.object(plugin, "get_data", return_value={"date": datetime.now().date().isoformat(), "sent_items": ["tmdb:1"]}), \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=True), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache", return_value={"id": 1, "poster_path": "/test.jpg"}):
+            plugin._MaoyanDianYing__send_remind(force=False, heat_list=[item])
+        plugin.post_message.assert_not_called()
+
+    def test_manual_notification_uses_top5_only_when_today_has_no_items(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = False
+        plugin._reminder_msgtype = "Plugin"
+        item = _make_heat_item(name="剧集0")
+        plugin.post_message = MagicMock()
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"), \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=False), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache", return_value={"id": 1, "poster_path": "/test.jpg"}):
+            plugin._MaoyanDianYing__send_remind(force=True, heat_list=[item])
+        plugin.post_message.assert_called_once()
+        assert "今日无新增"  in plugin.post_message.call_args.kwargs["text"]
+
+
+class TestClearCache:
+    """clear_cache 分类清理（含通知推送记录）+ 静默重建"""
+
+    def _items(self):
+        from types import SimpleNamespace
+        return [
+            SimpleNamespace(key="maoyandingyue_data"),
+            SimpleNamespace(key="maoyandingyue_tmdb_abc123"),
+            SimpleNamespace(key="maoyandingyue_tmdb_def456"),
+            SimpleNamespace(key="maoyandingyue_status_100"),
+            SimpleNamespace(key="maoyandingyue_cast_100"),
+            SimpleNamespace(key="maoyandingyue_detail_100"),
+            SimpleNamespace(key="maoyandingyue_remind"),
+        ]
+
+    def test_clear_cache_counts_by_type_and_clears_remind(self):
+        plugin = _make_plugin()
+        with patch.object(plugin, "get_data", return_value=self._items()), \
+             patch.object(plugin, "del_data") as mock_del, \
+             patch.object(plugin, "_auto_refresh") as mock_refresh:
+            result = plugin.clear_cache()
+            assert result["success"] is True
+            del_keys = [c.args[0] for c in mock_del.call_args_list]
+            assert "maoyandingyue_remind" in del_keys
+            assert len(del_keys) == 7
+            assert result["data"]["count"] == 7
+            stats = result["data"]["stats"]
+            assert stats["maoyandingyue_tmdb_"] == 2
+            assert stats["maoyandingyue_status_"] == 1
+            assert stats["maoyandingyue_cast_"] == 1
+            assert stats["maoyandingyue_detail_"] == 1
+            assert stats["maoyandingyue_data"] == 1
+            assert stats["maoyandingyue_remind"] == 1
+
+    def test_clear_cache_rebuilds_silently_without_notify(self):
+        plugin = _make_plugin()
+        with patch.object(plugin, "get_data", return_value=self._items()), \
+             patch.object(plugin, "del_data"), \
+             patch.object(plugin, "_auto_refresh") as mock_refresh:
+            plugin.clear_cache()
+            mock_refresh.assert_called_once_with(notify=False)
+
+    def test_clear_cache_periodic_refresh_still_notifies(self):
+        plugin = _make_plugin()
+        with patch.object(plugin, "_MaoyanDianYing__send_remind") as mock_remind, \
+             patch.object(plugin, "save_data"), \
+             patch("app.plugins._PluginBase.get_data", return_value=None), \
+             patch("app.plugins.maoyandianying.MaoyanScraper.fetch_heat_list", return_value=[]):
+            plugin._auto_refresh()
+            mock_remind.assert_called_once()
+
+
+class TestTmdbCacheTtl:
+    """TMDB 搜索二级缓存 7 天 TTL"""
+
+    def test_tmdb_cache_save_includes_ts(self):
+        plugin = _make_plugin()
+        with patch.object(plugin, "save_data") as mock_save:
+            plugin._MaoyanDianYing__save_cached_tmdb("测试剧集", {"id": 1, "name": "测试剧集", "media_type": "tv"})
+            key, value = mock_save.call_args.args
+            assert key.startswith("maoyandingyue_tmdb_")
+            assert "ts" in value
+            assert value["id"] == 1
+
+    def test_tmdb_cache_fresh_hit(self):
+        plugin = _make_plugin()
+        cached = {"id": 1, "name": "测试剧集", "ts": time.time()}
+        with patch.object(plugin, "get_data", return_value=cached):
+            assert plugin._MaoyanDianYing__get_cached_tmdb("测试剧集") == cached
+
+    def test_tmdb_cache_expired_after_7_days(self):
+        plugin = _make_plugin()
+        cached = {"id": 1, "name": "测试剧集", "ts": time.time() - 8 * 86400}
+        with patch.object(plugin, "get_data", return_value=cached):
+            assert plugin._MaoyanDianYing__get_cached_tmdb("测试剧集") is None
+
+    def test_tmdb_cache_missing_ts_treated_as_expired(self):
+        """旧版无 ts 字段的缓存视为过期，避免永久积累"""
+        plugin = _make_plugin()
+        cached = {"id": 1, "name": "测试剧集"}
+        with patch.object(plugin, "get_data", return_value=cached):
+            assert plugin._MaoyanDianYing__get_cached_tmdb("测试剧集") is None
+
+
+class TestReminderStatusTag:
+    """通知每条末尾附加【已订阅】/【未订阅】"""
+
+    def test_notify_appends_subscribed_tag(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = True
+        plugin._reminder_msgtype = "Plugin"
+        item = _make_heat_item(name="剧集1")
+        plugin.post_message = MagicMock()
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"), \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=True), \
+             patch.object(plugin, "_check_media_status", return_value="订阅已添加"), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache",
+                          return_value={"id": 1, "poster_path": "/t.jpg"}):
+            plugin._MaoyanDianYing__send_remind(force=False, heat_list=[item])
+        text = plugin.post_message.call_args.kwargs["text"]
+        assert "【已订阅】" in text
+
+    def test_notify_appends_unsubscribed_tag(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = True
+        plugin._reminder_msgtype = "Plugin"
+        item = _make_heat_item(name="剧集1")
+        plugin.post_message = MagicMock()
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"), \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=True), \
+             patch.object(plugin, "_check_media_status", return_value="未添加订阅"), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache",
+                          return_value={"id": 1, "poster_path": "/t.jpg"}):
+            plugin._MaoyanDianYing__send_remind(force=False, heat_list=[item])
+        text = plugin.post_message.call_args.kwargs["text"]
+        assert "【未订阅】" in text
+
+    def test_top5_fallback_also_appends_tag(self):
+        plugin = _make_plugin()
+        plugin._reminder_enabled = False
+        plugin._reminder_msgtype = "Plugin"
+        item = _make_heat_item(name="剧集1")
+        plugin.post_message = MagicMock()
+        with patch.object(plugin, "get_data", return_value=None), \
+             patch.object(plugin, "save_data"), \
+             patch.object(plugin, "_MaoyanDianYing__is_today_new", return_value=False), \
+             patch.object(plugin, "_check_media_status", return_value="未添加订阅"), \
+             patch.object(plugin, "_MaoyanDianYing__search_tmdb_with_cache",
+                          return_value={"id": 1, "poster_path": "/t.jpg"}):
+            plugin._MaoyanDianYing__send_remind(force=True, heat_list=[item])
+        text = plugin.post_message.call_args.kwargs["text"]
+        assert "【未订阅】" in text
