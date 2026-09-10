@@ -46,8 +46,11 @@ export default defineConfig({
               return
             }
             root.walkRules(rule => {
-              if (rule.selector && (rule.selector.includes('.v-') || rule.selector.includes('.mdi-'))) {
-                rule.remove()
+              if (rule.selector) {
+                const sel = rule.selector.trim()
+                if (sel.startsWith('.v-') || sel.startsWith('.mdi-')) {
+                  rule.remove()
+                }
               }
             })
           },

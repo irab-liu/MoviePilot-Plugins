@@ -8,9 +8,9 @@
 
 ### 1. 猫眼热度榜 (MaoyanDianYing)
 
-**版本**：v1.2.0
+**版本**：v1.2.1
 
-**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.0：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态，TMDB 搜索缓存 7 天有效期，清理缓存支持分类统计并同步清理通知记录。
+**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.1：优化详情页详情数据缓存与演员信息获取，前端构建优化。
 
 **功能**：
 - 自动抓取猫眼网播热度 TOP30 剧集
@@ -90,6 +90,7 @@
 ## 📋 版本历史
 
 ### MaoyanDianYing
+- v1.2.1：优化详情页详情数据缓存与演员信息获取，前端构建优化。
 - v1.2.0：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态，TMDB 搜索缓存 7 天有效期，清理缓存支持分类统计并同步清理通知记录
 - v1.1.1：新增提醒和清理缓存功能，tmdb识别错误时可点击清理缓存，刷新功能是增量如果有识别错误不会矫正
 - v1.1.0：新增海报点击打开媒体详情页功能
@@ -114,7 +115,7 @@
 
 ## 🔗 下载链接
 
-- [MaoyanDianYing v1.2.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.0)
+- [MaoyanDianYing v1.2.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.1)
 - [MaoyanTop30 v2.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.0.0)
 - [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)

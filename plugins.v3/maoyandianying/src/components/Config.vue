@@ -13,36 +13,44 @@
     <!-- 基础设置 -->
     <VCardText class="py-4">
       <div class="text-subtitle-2 mb-3 grey--text">基础设置</div>
-      <div class="d-flex flex-wrap gap-3 mb-3">
-        <VSwitch
-          v-model="form.enabled"
-          label="启用插件"
-          color="primary"
-          hide-details
-          density="compact"
-        />
-        <VBtn
-          variant="tonal"
-          color="error"
-          :loading="clearingCache"
-          size="small"
-          @click="clearCache"
-        >
-          <VIcon start size="small">mdi-delete-sweep</VIcon>
-          清理缓存
-        </VBtn>
-      </div>
-      <VSelect
-        v-model="form.refresh_interval"
-        :items="intervalItems"
-        item-title="title"
-        item-value="value"
-        label="自动刷新间隔"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="max-width: 160px"
-      />
+      <VRow class="mb-3">
+        <VCol cols="12" sm="6" md="3">
+          <VSwitch
+            v-model="form.enabled"
+            label="启用插件"
+            color="primary"
+            hide-details
+            density="compact"
+          />
+        </VCol>
+        <VCol cols="12" sm="auto">
+          <VBtn
+            variant="tonal"
+            color="error"
+            :loading="clearingCache"
+            size="small"
+            @click="clearCache"
+          >
+            <VIcon start size="small">mdi-delete-sweep</VIcon>
+            清理缓存
+          </VBtn>
+        </VCol>
+      </VRow>
+      <VRow>
+        <VCol cols="12" sm="6" md="3">
+          <VSelect
+            v-model="form.refresh_interval"
+            :items="intervalItems"
+            item-title="title"
+            item-value="value"
+            label="自动刷新间隔"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="maoyan-select"
+          />
+        </VCol>
+      </VRow>
     </VCardText>
 
     <VDivider />
@@ -50,34 +58,42 @@
     <!-- 通知设置 -->
     <VCardText class="py-4">
       <div class="text-subtitle-2 mb-3 grey--text">通知设置</div>
-      <div class="d-flex flex-wrap gap-3 mb-3">
-        <VSwitch
-          v-model="form.reminder_enabled"
-          label="开启通知"
-          color="primary"
-          hide-details
-          density="compact"
-        />
-        <VSwitch
-          v-model="form.run_remind"
-          label="立即运行一次提醒"
-          color="secondary"
-          hide-details
-          density="compact"
-        />
-      </div>
+      <VRow class="mb-3">
+        <VCol cols="12" sm="6" md="3">
+          <VSwitch
+            v-model="form.reminder_enabled"
+            label="开启通知"
+            color="primary"
+            hide-details
+            density="compact"
+          />
+        </VCol>
+        <VCol cols="12" sm="6" md="5">
+          <VSwitch
+            v-model="form.run_remind"
+            label="立即运行一次提醒"
+            color="secondary"
+            hide-details
+            density="compact"
+          />
+        </VCol>
+      </VRow>
       <div class="text-caption grey--text mb-3" style="max-width: 560px">
         根据插件设置的自动刷新间隔推送今日新增影片，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。
       </div>
-      <VSelect
-        v-model="form.reminder_msgtype"
-        :items="msgtypeItems"
-        label="消息类型"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="max-width: 160px"
-      />
+      <VRow>
+        <VCol cols="12" sm="6" md="3">
+          <VSelect
+            v-model="form.reminder_msgtype"
+            :items="msgtypeItems"
+            label="消息类型"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="maoyan-select"
+          />
+        </VCol>
+      </VRow>
     </VCardText>
 
     <VDivider />
@@ -193,3 +209,11 @@ function save() {
   saving.value = false
 }
 </script>
+
+<style scoped>
+/* 手机无 hover，outlined 边框默认 opacity 0.38 太浅、与背景融合；
+   提升到高强调度，与电脑版 hover 观感一致 */
+.maoyan-select :deep(.v-field__outline) {
+  --v-field-border-opacity: 1;
+}
+</style>

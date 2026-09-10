@@ -150,9 +150,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.0：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.1：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.2.0"
+    plugin_version = "1.2.1"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -252,12 +252,15 @@ class MaoyanDianYing(_PluginBase):
                             logger.warning("【TMDB过滤】%s 返回来源=%s，跳过", title, source)
                             continue
                         logger.info("【TMDB确认】%s 来源=%s ID=%s", title, source or "themoviedb", getattr(media_info, "tmdb_id", None))
+                        tmdb_id = getattr(media_info, "tmdb_id", None)
+                        # 海报/首播日期/背景图改从 TV 详情（档案）获取，识别只负责提供 tmdb_id
+                        detail = self.__get_detail_with_cache(tmdb_id)
                         result = {
-                            "id": getattr(media_info, "tmdb_id", None),
-                            "name": media_info.title or title,
-                            "poster_path": media_info.poster_path,
-                            "backdrop_path": media_info.backdrop_path,
-                            "first_air_date": media_info.first_air_date,
+                            "id": tmdb_id,
+                            "name": (detail or {}).get("name") or media_info.title or title,
+                            "poster_path": (detail or {}).get("poster_path") or getattr(media_info, "poster_path", None),
+                            "backdrop_path": (detail or {}).get("backdrop_path") or getattr(media_info, "backdrop_path", None),
+                            "first_air_date": (detail or {}).get("first_air_date") or getattr(media_info, "first_air_date", None),
                             "media_type": "TV",
                         }
                         self.__save_cached_tmdb(title, result)
@@ -312,6 +315,16 @@ class MaoyanDianYing(_PluginBase):
         """带二级缓存的 TMDB 搜索（优先复用 host TmdbCache via chain.recognize_media）"""
         cached = self.__get_cached_tmdb(title)
         if cached:
+            # 兼容历史缓存：旧数据可能缺海报/首播日期（曾从识别返回值落空写入），
+            # 命中时若富信息缺失则补查 TV 详情并回写，避免空值被缓存固化 7 天。
+            if cached.get("id") and (not cached.get("poster_path") or not cached.get("first_air_date")):
+                detail = self.__get_detail_with_cache(cached.get("id"))
+                if detail:
+                    cached["poster_path"] = cached.get("poster_path") or detail.get("poster_path")
+                    cached["backdrop_path"] = cached.get("backdrop_path") or detail.get("backdrop_path")
+                    cached["first_air_date"] = cached.get("first_air_date") or detail.get("first_air_date")
+                    cached["name"] = detail.get("name") or cached.get("name") or title
+                    self.__save_cached_tmdb(title, cached)
             return cached
         try:
             meta = _create_meta_info(title)
@@ -324,16 +337,19 @@ class MaoyanDianYing(_PluginBase):
                     logger.warning("【TMDB过滤】%s 返回来源=%s，跳过", title, source)
                 else:
                     logger.info("【TMDB确认】%s 来源=%s ID=%s", title, source or "themoviedb", getattr(media_info, "tmdb_id", None))
+                    tmdb_id = getattr(media_info, "tmdb_id", None)
+                    # 海报/首播日期/背景图改从 TV 详情（档案）获取，识别只负责提供 tmdb_id
+                    detail = self.__get_detail_with_cache(tmdb_id)
                     result = {
-                    "id": getattr(media_info, "tmdb_id", None),
-                    "name": media_info.title or title,
-                    "poster_path": media_info.poster_path,
-                    "backdrop_path": media_info.backdrop_path,
-                    "first_air_date": media_info.first_air_date,
+                        "id": tmdb_id,
+                        "name": (detail or {}).get("name") or media_info.title or title,
+                        "poster_path": (detail or {}).get("poster_path") or getattr(media_info, "poster_path", None),
+                        "backdrop_path": (detail or {}).get("backdrop_path") or getattr(media_info, "backdrop_path", None),
+                        "first_air_date": (detail or {}).get("first_air_date") or getattr(media_info, "first_air_date", None),
                         "media_type": "TV",
                     }
                     self.__save_cached_tmdb(title, result)
-                    logger.debug("【TMDB搜索】'%s' → ID %s (host cache)", title, media_info.tmdb_id)
+                    logger.debug("【TMDB搜索】'%s' → ID %s (host cache)", title, tmdb_id)
                     return result
         except Exception as e:
             logger.warning("【TMDB搜索】chain.recognize_media '%s' 失败: %s", title, e)
@@ -420,15 +436,36 @@ class MaoyanDianYing(_PluginBase):
         except Exception:
             pass
 
-    def get_tv_credits(self, tmdbid: int) -> List[str]:
-        """获取前五位演员（使用 detail 缓存，一次请求获取 cast+first_air_date）。"""
+    def __get_detail_with_cache(self, tmdbid: int) -> Optional[dict]:
+        """读取 TV 详情（含 poster_path/first_air_date/credits），走 7 天缓存；失败返回 None。
+
+        海报、首播日期、演员统一从这里取，不再依赖 recognize_media 的顺带字段。
+        """
+        if not tmdbid:
+            return None
         try:
             detail = self.__get_cached_detail(tmdbid)
+            if detail and (not detail.get("poster_path") or not detail.get("first_air_date")):
+                # 脏缓存（曾写入缺字段数据），丢弃并重新查询 TMDB
+                logger.warning("【详情缓存】tmdbid=%s 命中脏缓存（缺海报/首播日期），重新查询 TMDB", tmdbid)
+                detail = None
             if not detail:
                 api = TmdbApi(language="zh")
                 detail = api.tv.details(tmdbid)
                 if detail:
                     self.__save_cached_detail(tmdbid, detail)
+            if detail and (not detail.get("poster_path") or not detail.get("first_air_date")):
+                logger.warning("【详情缓存】tmdbid=%s 重新查询后仍缺字段：poster=%r first_air_date=%r",
+                               tmdbid, detail.get("poster_path"), detail.get("first_air_date"))
+            return detail
+        except Exception as e:
+            logger.warning("【详情缓存】获取 tmdbid=%s 详情失败: %s", tmdbid, e)
+            return None
+
+    def get_tv_credits(self, tmdbid: int) -> List[str]:
+        """获取前五位演员（使用 detail 缓存，一次请求获取 cast+first_air_date）。"""
+        try:
+            detail = self.__get_detail_with_cache(tmdbid)
             if not detail:
                 return []
             cast = detail.get("credits", {}).get("cast", [])[:5]
@@ -647,7 +684,7 @@ class MaoyanDianYing(_PluginBase):
         return "未添加订阅"
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
-        """返回配置页面和默认配置。"""
+        """返回配置页面和默认配置。手机版用 Vuetify JSON 栅格渲染，电脑版用远程 Config 组件。"""
         logger.info("【配置页面】返回 Vuetify 配置表单（Vue 模式使用远程 Config 组件）")
         from app.schemas.types import MessageType
         return [
@@ -655,54 +692,107 @@ class MaoyanDianYing(_PluginBase):
                 "component": "VForm",
                 "content": [
                     {
-                        "component": "VSwitch",
-                        "props": {
-                            "model": "enabled",
-                            "label": "启用插件",
-                        },
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {"model": "enabled", "label": "启用插件"},
+                                    },
+                                ],
+                            },
+                        ],
                     },
                     {
-                        "component": "VSelect",
-                        "props": {
-                            "model": "refresh_interval",
-                            "label": "自动刷新间隔（小时）",
-                            "items": [
-                                {"title": "1小时", "value": 1},
-                                {"title": "2小时", "value": 2},
-                                {"title": "3小时", "value": 3},
-                                {"title": "6小时", "value": 6},
-                                {"title": "12小时", "value": 12},
-                                {"title": "24小时", "value": 24},
-                            ],
-                        },
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "refresh_interval",
+                                            "label": "自动刷新间隔（小时）",
+                                            "variant": "outlined",
+                                            "density": "compact",
+                                            "items": [
+                                                {"title": "1小时", "value": 1},
+                                                {"title": "2小时", "value": 2},
+                                                {"title": "3小时", "value": 3},
+                                                {"title": "6小时", "value": 6},
+                                                {"title": "12小时", "value": 12},
+                                                {"title": "24小时", "value": 24},
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
                     },
                     {
-                        "component": "VSwitch",
-                        "props": {
-                            "model": "reminder_enabled",
-                            "label": "开启通知",
-                        },
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {"model": "reminder_enabled", "label": "开启通知"},
+                                    },
+                                ],
+                            },
+                        ],
                     },
                     {
-                        "component": "VSelect",
-                        "props": {
-                            "model": "reminder_msgtype",
-                            "label": "消息类型",
-                            "items": [
-                                {"title": item.value, "value": item.name}
-                                for item in MessageType
-                            ],
-                        },
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "reminder_msgtype",
+                                            "label": "消息类型",
+                                            "variant": "outlined",
+                                            "density": "compact",
+                                            "items": [
+                                                {"title": item.value, "value": item.name}
+                                                for item in MessageType
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
                     },
                     {
-                        "component": "VAlert",
-                        "props": {
-                            "type": "info",
-                            "variant": "tonal",
-                            "density": "compact",
-                            "class": "mt-3",
-                        },
-                        "text": "开启通知后，系统会在每次自动刷新后检查今日新增影片并推送，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。",
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "VAlert",
+                                        "props": {
+                                            "type": "info",
+                                            "variant": "tonal",
+                                            "density": "compact",
+                                            "class": "mt-3",
+                                        },
+                                        "text": "开启通知后，系统会在每次自动刷新后检查今日新增影片并推送，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。",
+                                    },
+                                ],
+                            },
+                        ],
                     },
                 ],
             }
@@ -1289,6 +1379,12 @@ class MaoyanDianYing(_PluginBase):
                 "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
             self.save_data(self._cache_key, result)
+
+            # 手动刷新也随抓取触发今日上新通知（与自动刷新一致；失败不影响抓取结果）
+            try:
+                self.__send_remind(force=False, heat_list=enriched)
+            except Exception as e:
+                logger.error("【立即运行1次】触发今日上新提醒失败: %s", e)
 
             elapsed = round(time.time() - start_time, 1)
             logger.info("【立即运行1次】完成，耗时 %ss，共 %d 条（已更新缓存）", elapsed, len(enriched))
