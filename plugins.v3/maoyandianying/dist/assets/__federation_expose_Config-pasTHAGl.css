@@ -1,0 +1,6 @@
+
+/* 手机无 hover，outlined 边框默认 opacity 0.38 太浅、与背景融合；
+   提升到高强调度，与电脑版 hover 观感一致 */
+.maoyan-select[data-v-55101a4b] .v-field__outline {
+  --v-field-border-opacity: 1;
+}
