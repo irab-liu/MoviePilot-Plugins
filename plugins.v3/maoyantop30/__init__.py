@@ -112,13 +112,13 @@ TYPE_OPTIONS = {
 
 # 榜单缓存 TTL（秒）：3 小时，过期自动重抓（替代定时刷新）
 CACHE_TTL = 3 * 3600
-# TMDB 识别缓存 TTL：2 小时
-TMDB_CACHE_TTL = 2 * 3600
-# 豆瓣兜底缓存 TTL：命中 6 小时 / miss 7 天
-DOUBAN_HIT_TTL = 6 * 3600
+# TMDB 识别缓存 TTL：30 天（标题->ID 映射稳定，命中长期缓存，增量识别新条目）
+TMDB_CACHE_TTL = 30 * 24 * 3600
+# 豆瓣兜底缓存 TTL：命中 30 天 / miss 7 天
+DOUBAN_HIT_TTL = 30 * 24 * 3600
 DOUBAN_MISS_TTL = 7 * 24 * 3600
-# TMDB miss 缓存 TTL：TMDB 搜不到的条目（国产片/网络电影）短缓存，避免每次实时重搜
-TMDB_MISS_TTL = 6 * 3600
+# TMDB miss 缓存 TTL：24 小时（国产片/网络电影每天补一次，避免频繁重搜）
+TMDB_MISS_TTL = 24 * 3600
 # 综艺/电影独立缓存 key（剧集沿用 _cache_key）
 VARIETY_CACHE_KEY = "maoyantop30_variety_data"
 MOVIE_CACHE_KEY = "maoyantop30_movie_data"
@@ -166,7 +166,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "1.3.6"
+    plugin_version = "2.0.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -185,13 +185,26 @@ class MaoyanTop30(_PluginBase):
         """
         初始化插件配置。
 
-        :param config: 插件配置字典，包含 enabled
+        :param config: 插件配置字典，包含 enabled / reidentify / refresh
         """
+        do_reidentify = do_refresh = False
         if config:
             self._enabled = config.get("enabled", False)
+            do_reidentify = bool(config.get("reidentify", False))
+            do_refresh = bool(config.get("refresh", False))
         # 启用时异步预热 TMDB 缓存
         if self._enabled:
             self.__start_warmup()
+        # 一次性动作开关：勾选后点保存触发，触发后立即复位（避免每次保存都重复执行）。
+        # refresh 是 reidentify 的超集（清榜单+清识别+重抓+重识别），同时勾选时只跑
+        # refresh，避免两个并发预热线程竞态写缓存。
+        if do_refresh:
+            self.__run_refresh()
+            self.__reset_oneoff(config, "refresh")
+            self.__reset_oneoff(config, "reidentify")
+        elif do_reidentify:
+            self.__run_reidentify()
+            self.__reset_oneoff(config, "reidentify")
 
     def __start_warmup(self):
         """启动 daemon 线程执行预热，避免阻塞插件加载"""
@@ -208,6 +221,20 @@ class MaoyanTop30(_PluginBase):
         )
         thread.start()
         logger.info("【预热】线程已启动")
+
+    def __trigger_warmup(self):
+        """手动触发一次预热（不受 _warmup_done 限制，后台 daemon 线程跑）。
+
+        供设置界面「重新识别海报」「刷新榜单」按钮调用：点击后清缓存并立即
+        重新抓取/识别，不影响插件加载期的正常预热节奏。
+        """
+        thread = threading.Thread(
+            target=self.__warmup,
+            daemon=True,
+            name="maoyantop30_manual_warmup"
+        )
+        thread.start()
+        logger.info("【预热】手动触发线程已启动")
 
     def __warmup(self):
         """
@@ -233,6 +260,14 @@ class MaoyanTop30(_PluginBase):
                     cache_key = self.__tmdb_cache_key(title) + cache_suffix
                     if self.__cache_fresh(self.get_data(cache_key), TMDB_CACHE_TTL):
                         return 0
+                    # TMDB miss 缓存：确认搜不到的国产片/网络电影 6 小时内跳过重搜，
+                    # 避免每 2 小时预热都对同一批 miss 条目重复打 TMDB
+                    miss_key = cache_key + "_miss"
+                    try:
+                        if self.__cache_fresh(self.get_data(miss_key), TMDB_MISS_TTL):
+                            return 0
+                    except Exception:
+                        pass
                     try:
                         year = self.__extract_year(item)
                         result = self.__tmdb_search(
@@ -243,6 +278,15 @@ class MaoyanTop30(_PluginBase):
                                 self.save_data(cache_key, {"ts": time.time(),
                                    **self.__tmdb_result_to_serializable(best)})
                                 return 1
+                        # 豆瓣兜底：TMDB miss 或网络故障都尝试（命中时上面已 return）
+                        self.__douban_match(title, year, mtype)
+                        # 仅"确认无结果"（空列表，非网络故障 None）才写 miss 缓存，
+                        # 网络故障不污染 miss 缓存，下次预热仍会重试 TMDB + 豆瓣
+                        if isinstance(result, list) and not result:
+                            try:
+                                self.save_data(miss_key, {"ts": time.time()})
+                            except Exception:
+                                pass
                     except Exception as e:
                         logger.warning("【预热】TMDB 搜索失败 [%s]: %s",
                                        title, e)
@@ -316,8 +360,45 @@ class MaoyanTop30(_PluginBase):
             pass
         return None
 
+    @staticmethod
+    def __tmdb_api_domain() -> str:
+        """读取宿主 TMDB API 域名（支持镜像域名配置），失败回退官方域名。
+
+        国内环境直连 api.themoviedb.org 常被墙/无 IPv6 路由（Connection refused），
+        宿主允许在设置里把 TMDB_API_DOMAIN 配成镜像域名，插件必须跟随宿主配置
+        而非硬编码官方域名。
+        """
+        try:
+            domain = getattr(settings, "TMDB_API_DOMAIN", None)
+            if isinstance(domain, str) and domain.strip():
+                return domain.strip()
+        except Exception:
+            pass
+        return "api.themoviedb.org"
+
+    @staticmethod
+    def __tmdb_image_url(path: str, size: str = "w500") -> str:
+        """按宿主配置构造 TMDB 图片 URL（支持镜像域名），失败回退官方域名。"""
+        if not path:
+            return ""
+        try:
+            fn = getattr(settings, "TMDB_IMAGE_URL", None)
+            if callable(fn):
+                url = fn(path, size)
+                if isinstance(url, str) and url:
+                    return url
+        except Exception:
+            pass
+        try:
+            domain = getattr(settings, "TMDB_IMAGE_DOMAIN", None)
+            if isinstance(domain, str) and domain.strip():
+                return f"https://{domain.strip()}/t/p/{size}/{path.lstrip('/')}"
+        except Exception:
+            pass
+        return f"https://image.tmdb.org/t/p/{size}/{path.lstrip('/')}"
+
     def __tmdb_search(self, title: str, year: Optional[str] = None,
-                       mtype: MediaType = MediaType.TV) -> list:
+                       mtype: MediaType = MediaType.TV) -> Optional[list]:
         """
         TMDB 搜索（自建直连，绕开宿主 tmdbv3api 的 cookiejar 递归雷）。
 
@@ -331,7 +412,7 @@ class MaoyanTop30(_PluginBase):
         """
         api_key = self.__get_tmdb_api_key()
         if not api_key:
-            return []
+            return None
         try:
             import urllib.request
             import urllib.parse
@@ -340,8 +421,8 @@ class MaoyanTop30(_PluginBase):
                 params = {"api_key": api_key, "query": title, "language": "zh-CN"}
                 if _year:
                     params["year" if kind == "movie" else "first_air_date_year"] = str(_year)
-                url = "https://api.themoviedb.org/3/search/%s?%s" % (
-                    kind, urllib.parse.urlencode(params))
+                url = "https://%s/3/search/%s?%s" % (
+                    self.__tmdb_api_domain(), kind, urllib.parse.urlencode(params))
                 req = urllib.request.Request(url, headers={
                     "User-Agent": "Mozilla/5.0 (MoviePilot MaoyanTop30)"})
                 with urllib.request.urlopen(req, timeout=12) as resp:
@@ -354,13 +435,13 @@ class MaoyanTop30(_PluginBase):
                 results = _do_search(None)
             return results
         except RecursionError:
-            return []
+            return None
         except Exception as e:
             logger.warning("TMDB 直连搜索失败 [%s/%s]: %s", mtype, title, e)
-            return []
+            return None
 
     async def __tmdb_search_async(self, title: str, year: Optional[str] = None,
-                                   mtype: MediaType = MediaType.TV) -> list:
+                                   mtype: MediaType = MediaType.TV) -> Optional[list]:
         """__tmdb_search 的异步包装：在线程池中执行，不阻塞事件循环。"""
         import asyncio
         try:
@@ -369,7 +450,23 @@ class MaoyanTop30(_PluginBase):
                 None, self.__tmdb_search, title, year, mtype)
         except Exception as e:
             logger.warning("TMDB 异步搜索异常 [%s/%s]: %s", mtype, title, e)
-            return []
+            return None
+
+    def __read_douban_cache(self, title: str, year: Optional[str] = None) -> dict:
+        """纯读豆瓣兜底缓存（不触发网络），命中返回 dict（含 id/pic/year），否则 {}。"""
+        norm = self.__normalize_title(title)
+        if not norm:
+            return {}
+        cache_key = "maoyantop30_douban2_" + hashlib.md5(
+            f"{norm}|{year or ''}".encode("utf-8")).hexdigest()[:12]
+        try:
+            cached = self.get_data(cache_key)
+            if isinstance(cached, dict) and cached.get("id"):
+                if self.__cache_fresh(cached, DOUBAN_HIT_TTL):
+                    return cached
+        except Exception:
+            pass
+        return {}
 
     def __douban_match(self, title: str, year: Optional[str] = None,
                        mtype: MediaType = MediaType.MOVIE) -> dict:
@@ -420,6 +517,8 @@ class MaoyanTop30(_PluginBase):
                     pass
                 logger.info("猫眼TOP30豆瓣兜底命中 [%s] -> %s", norm, item["id"])
                 return item
+            # 豆瓣也未命中（模块未启用或搜索无结果）：打日志便于诊断，写 miss 缓存
+            logger.warning("猫眼TOP30豆瓣兜底未命中 [%s]（豆瓣模块可能未启用或无结果）", norm)
             try:
                 self.save_data(cache_key, {"ts": time.time(), "id": None})
             except Exception:
@@ -617,9 +716,22 @@ class MaoyanTop30(_PluginBase):
 
     def get_service(self) -> list[dict]:
         """
-        榜单数据缓存自带 3 小时 TTL，过期自动重抓，无需定时刷新任务。
+        后台缓存预热：每 3 小时跑一次，补齐 TMDB/豆瓣二级缓存（增量识别）。
+
+        探索页已改为纯读缓存（不现场识别），海报与题材依赖后台预热提前
+        写入缓存。命中缓存 TTL 拉长到 30 天后，预热实际只识别新上榜条目
+        （老条目命中缓存直接跳过），3 小时周期足够及时补齐新增条目。
+        __warmup 为同步实现，APScheduler 在线程池执行。
         """
-        return []
+        if not self.get_state():
+            return []
+        return [{
+            "id": "MaoyanTop30.Warmup",
+            "name": "猫眼TOP30缓存预热",
+            "trigger": IntervalTrigger(hours=3),
+            "func": self.__warmup,
+            "kwargs": {},
+        }]
 
     # 注意：不注册 get_module()，避免宿主识别链轮询我们插件。
     # v1.1.4 没有 get_module()，订阅添加时宿主不轮询我们，不会踩雷。
@@ -641,16 +753,6 @@ class MaoyanTop30(_PluginBase):
             }
         self.save_data(self._identity_cache_key, dict(list(identities.items())[-2000:]))
 
-    @staticmethod
-    def get_media_source() -> List[Dict[str, Any]]:
-        return [
-            {
-                "name": "猫眼TOP30",
-                "media_source": MediaSource.TMDB,
-                "media_types": [MediaType.TV],
-            }
-        ]
-
     def __cache_fresh(self, cached: dict, ttl: float) -> bool:
         """判断缓存是否在 TTL 有效期内；无 ts 的旧版缓存视为有效（识别结果稳定）。"""
         if not isinstance(cached, dict):
@@ -659,6 +761,35 @@ class MaoyanTop30(_PluginBase):
         if not ts:
             return True
         return time.time() - ts <= ttl
+
+    def __clear_recognition_cache(self) -> int:
+        """清空 TMDB/豆瓣识别缓存（tmdb2_/douban2_ 前缀），返回清除条数。
+
+        供设置界面「重新识别海报」「刷新榜单」按钮调用；榜单数据不受影响。
+        """
+        cleared = 0
+        try:
+            rows = self.get_data() or []
+        except Exception:
+            rows = []
+        for row in rows:
+            key = getattr(row, "key", None) or ""
+            if (key.startswith("maoyantop30_tmdb2_")
+                    or key.startswith("maoyantop30_douban2_")):
+                try:
+                    self.del_data(key)
+                    cleared += 1
+                except Exception:
+                    pass
+        return cleared
+
+    def __clear_list_cache(self) -> None:
+        """清空三类榜单缓存（剧集/综艺/电影），供「刷新榜单」按钮调用。"""
+        for key in (self._cache_key, VARIETY_CACHE_KEY, MOVIE_CACHE_KEY):
+            try:
+                self.del_data(key)
+            except Exception:
+                pass
 
     def __read_cached_list(self, key: str, date_check: bool = False):
         """
@@ -830,13 +961,9 @@ class MaoyanTop30(_PluginBase):
             return cached
         logger.info("开始抓取电影综合票房: %s", MOVIE_AJAX_URL)
         try:
-            params = self.__maoyan_sign({
-                "showDate": today.strftime("%Y%m%d"),
-                "movieId": "",
-                "orderType": "0",
-                "uuid": hashlib.md5(
-                    f"maoyantop30-{today}".encode()).hexdigest()[:32],
-            })
+            # 免签：实测 dashboard-ajax/movie 直接带 showDate=YYYYMMDD 即返回
+            # 200（连测 5/5 稳定），无需 veri.js 签名。
+            params = {"showDate": today.strftime("%Y%m%d")}
             resp = RequestUtils(headers=HEADERS, timeout=15).get_res(
                 MOVIE_AJAX_URL, params=params)
             if resp is None or not resp.ok:
@@ -1041,6 +1168,104 @@ class MaoyanTop30(_PluginBase):
             return None
         return mediainfo
 
+    @staticmethod
+    def __poster_proxy_url(title: str, category: str, year: Optional[str]) -> str:
+        """生成指向本插件 poster 代理接口的相对路径（探索页 miss 条目用）。"""
+        from urllib.parse import quote
+        params = [
+            "title=%s" % quote(str(title)),
+            "category=%s" % quote(str(category)),
+        ]
+        if year:
+            params.append("year=%s" % quote(str(year)))
+        params.append("apikey=%s" % quote(str(settings.API_TOKEN)))
+        return "/api/v1/plugin/MaoyanTop30/poster?%s" % "&".join(params)
+
+    def get_poster(self, title: str = None, category: str = None,
+                   year: str = None):
+        """探索页懒加载海报代理：查缓存 -> 现场识别 -> 302 重定向海报图。
+
+        前端 MediaCard 对 poster_path 非空条目用 <img> 异步加载，加载期间显示
+        骨架屏；本接口识别到海报后 302 重定向到真实图片地址，浏览器自动跟进，
+        实现"加载中 -> 识别完成自动补图"，无需重新进入探索页。
+        """
+        from starlette.responses import RedirectResponse, Response
+        if not title:
+            return Response(status_code=404)
+        title = str(title).strip()
+        category = category or CATEGORY_TV
+        mtype = MediaType.MOVIE if category == CATEGORY_MOVIE else MediaType.TV
+        cache_suffix = "_movie" if category == CATEGORY_MOVIE else ""
+        cache_key = self.__tmdb_cache_key(title) + cache_suffix
+        # 1. TMDB 缓存命中 -> 直接重定向
+        try:
+            cached = self.get_data(cache_key)
+            if self.__cache_fresh(cached, TMDB_CACHE_TTL):
+                pp = (cached or {}).get("poster_path", "")
+                if pp:
+                    return RedirectResponse(self.__tmdb_image_url(pp))
+        except Exception:
+            pass
+        # 2. 豆瓣缓存命中 -> 直接重定向
+        try:
+            d = self.__read_douban_cache(title, year)
+            if d and d.get("pic"):
+                return RedirectResponse(str(d["pic"]))
+        except Exception:
+            pass
+        # 3. 现场识别 TMDB（结果写缓存，下次秒回）
+        try:
+            results = self.__tmdb_search(self.__normalize_title(title), year, mtype)
+            if results:
+                best = self.__best_tmdb_match(title, results, year)
+                if best and best.get("poster_path"):
+                    try:
+                        self.save_data(cache_key, {"ts": time.time(),
+                                     **self.__tmdb_result_to_serializable(best)})
+                    except Exception:
+                        pass
+                    return RedirectResponse(
+                        self.__tmdb_image_url(best["poster_path"]))
+        except Exception:
+            pass
+        # 4. 豆瓣兜底（结果自带缓存）
+        try:
+            d = self.__douban_match(title, year, mtype)
+            if d and d.get("pic"):
+                return RedirectResponse(str(d["pic"]))
+        except Exception:
+            pass
+        return Response(status_code=404)
+
+    def __run_reidentify(self):
+        """重新识别海报/题材：清空识别缓存并后台重识别（保存时触发的一次性动作）。"""
+        try:
+            cleared = self.__clear_recognition_cache()
+            self.__trigger_warmup()
+            logger.info("猫眼TOP30重新识别：已清空 %d 条识别缓存，后台重识别中", cleared)
+        except Exception as e:
+            logger.error("猫眼TOP30重新识别失败: %s", e)
+
+    def __run_refresh(self):
+        """刷新榜单：清空榜单+识别缓存，重抓猫眼榜单并重识别（保存时触发的一次性动作）。"""
+        try:
+            self.__clear_list_cache()
+            cleared = self.__clear_recognition_cache()
+            self.__trigger_warmup()
+            logger.info("猫眼TOP30刷新榜单：已清空榜单缓存与 %d 条识别缓存，后台重抓+重识别中", cleared)
+        except Exception as e:
+            logger.error("猫眼TOP30刷新榜单失败: %s", e)
+
+    def __reset_oneoff(self, config: dict, key: str):
+        """复位一次性动作开关：写回配置置 False，避免每次保存都重复触发。"""
+        try:
+            cfg = dict(config or {})
+            if cfg.get(key):
+                cfg[key] = False
+                self.update_config(cfg)
+        except Exception:
+            pass
+
     def get_api(self) -> List[Dict[str, Any]]:
         return [
             {
@@ -1048,7 +1273,13 @@ class MaoyanTop30(_PluginBase):
                 "endpoint": self.maoyan_top30_discover,
                 "methods": ["GET"],
                 "summary": "猫眼TOP30探索数据源",
-            }
+            },
+            {
+                "path": "/poster",
+                "endpoint": self.get_poster,
+                "methods": ["GET"],
+                "summary": "猫眼TOP30懒加载海报代理",
+            },
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -1084,9 +1315,43 @@ class MaoyanTop30(_PluginBase):
                         },
                         "text": "启用后，探索页面将支持猫眼网播热度TOP30剧集浏览。",
                     },
+                    {
+                        "component": "VSwitch",
+                        "props": {
+                            "model": "reidentify",
+                            "label": "保存时重新识别海报",
+                        },
+                    },
+                    {
+                        "component": "VAlert",
+                        "props": {
+                            "type": "info",
+                            "variant": "tonal",
+                            "density": "compact",
+                            "class": "mt-1",
+                        },
+                        "text": "勾选后点击保存：清空已缓存的 TMDB/豆瓣识别结果，后台重新识别海报与题材（海报错误或识别不准时使用）。",
+                    },
+                    {
+                        "component": "VSwitch",
+                        "props": {
+                            "model": "refresh",
+                            "label": "保存时刷新榜单",
+                        },
+                    },
+                    {
+                        "component": "VAlert",
+                        "props": {
+                            "type": "info",
+                            "variant": "tonal",
+                            "density": "compact",
+                            "class": "mt-1",
+                        },
+                        "text": "勾选后点击保存：清空榜单缓存并重新抓取猫眼榜单、重新匹配海报（榜单数据有误时使用）。",
+                    },
                 ],
             }
-        ], {"enabled": False}
+        ], {"enabled": False, "reidentify": False, "refresh": False}
 
     def maoyan_top30_discover(self,
                              category: str = None,
@@ -1094,153 +1359,90 @@ class MaoyanTop30(_PluginBase):
                              page: int = 1,
                              count: int = 30) -> Response[List[MediaInfo]]:
         def __item_to_media(item: dict, category: str = CATEGORY_TV) -> MediaInfo:
+            """纯读缓存：TMDB 命中给完整，豆瓣缓存兜底，双 miss 给标题条目（media_id 空）。"""
             title = item.get("name", "")
             poster = item.get("poster", "") or None
             if category == CATEGORY_MOVIE:
-                # 电影：movie 专属缓存 -> 无则 search_movies 补 TMDB ID
                 movie_year = self.__extract_year(item)
                 movie_cache_key = self.__tmdb_cache_key(title) + "_movie"
-                tmdb_info_m = None
                 try:
                     cached_m = self.get_data(movie_cache_key)
                     if self.__cache_fresh(cached_m, TMDB_CACHE_TTL):
-                        tmdb_info_m = cached_m
-                except Exception:
-                    pass
-                # TMDB miss 缓存：确认搜不到的条目（国产片/网络电影）短缓存，
-                # 避免每次探索请求都实时重搜拖慢整页
-                tmdb_miss = False
-                if not tmdb_info_m:
-                    try:
-                        miss_m = self.get_data(movie_cache_key + "_miss")
-                        if self.__cache_fresh(miss_m, TMDB_MISS_TTL):
-                            tmdb_miss = True
-                    except Exception:
-                        pass
-                if not tmdb_info_m and not tmdb_miss:
-                    try:
-                        tmdb_result = self.__tmdb_search(
-                            self.__normalize_title(title), movie_year,
-                            MediaType.MOVIE)
-                        if tmdb_result:
-                            tmdb_info_m = self.__best_tmdb_match(
-                                title, tmdb_result, movie_year)
-                            if tmdb_info_m:
-                                try:
-                                    self.save_data(
-                                        movie_cache_key,
-                                        {"ts": time.time(),
-                                         **self.__tmdb_result_to_serializable(tmdb_info_m)})
-                                except Exception:
-                                    pass
-                        if not tmdb_info_m:
-                            try:
-                                self.save_data(
-                                    movie_cache_key + "_miss", {"ts": time.time()})
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                if tmdb_info_m:
-                    movie_id = tmdb_info_m.get("id")
-                    poster_path_m = tmdb_info_m.get("poster_path", "")
-                    if poster_path_m and not poster:
-                        poster = f"https://image.tmdb.org/t/p/w500{poster_path_m}"
-                else:
-                    movie_id = None
-                    douban_item = self.__douban_match(
-                        title, movie_year, MediaType.MOVIE)
-                    if douban_item:
+                        movie_id = cached_m.get("id")
+                        poster_path_m = cached_m.get("poster_path", "")
+                        if poster_path_m and not poster:
+                            poster = self.__tmdb_image_url(poster_path_m)
                         return MediaInfo(
                             type=MediaType.MOVIE,
-                            media_source=MediaSource.Douban,
+                            media_source=MediaSource.TMDB,
                             title=title,
-                            year=douban_item.get("year"),
-                            media_id=douban_item["id"],
-                            poster_path=douban_item.get("pic") or poster,
+                            year=None,
+                            media_id=str(movie_id) if movie_id else "",
+                            poster_path=poster,
                             overview=f"票房: {item.get('box_office', '')} | 上映: {item.get('days', '')} | 场次: {item.get('show_count', '')}",
                         )
-                return MediaInfo(
-                    type=MediaType.MOVIE,
-                    media_source=MediaSource.TMDB,
-                    title=title,
-                    year=None,
-                    media_id=str(movie_id) if movie_id else str(item.get("seriesId", "")),
-                    poster_path=poster,
-                    overview=f"票房: {item.get('box_office', '')} | 上映: {item.get('days', '')} | 场次: {item.get('show_count', '')}",
-                )
-            tmdbid = None
-            tmdb_info = None
-            cache_key = self.__tmdb_cache_key(title)
-            try:
-                cached_info = self.get_data(cache_key)
-                if self.__cache_fresh(cached_info, TMDB_CACHE_TTL):
-                    tmdb_info = cached_info
-                    logger.debug("【缓存】二级缓存命中: %s", title)
-            except Exception:
-                pass
-
-            # TMDB miss 缓存：确认搜不到的条目短缓存，避免每次实时重搜
-            tmdb_miss = False
-            if not tmdb_info:
-                try:
-                    miss_v = self.get_data(cache_key + "_miss")
-                    if self.__cache_fresh(miss_v, TMDB_MISS_TTL):
-                        tmdb_miss = True
                 except Exception:
                     pass
-
-            if not tmdb_info and not tmdb_miss:
-                try:
-                    tv_year = self.__extract_year(item)
-                    tmdb_result = self.__tmdb_search(
-                        self.__normalize_title(title), tv_year, MediaType.TV)
-                    if tmdb_result:
-                        tmdb_info = self.__best_tmdb_match(title, tmdb_result, tv_year)
-                        if tmdb_info:
-                            try:
-                                self.save_data(
-                                    cache_key,
-                                    {"ts": time.time(),
-                                     **self.__tmdb_result_to_serializable(tmdb_info)})
-                            except Exception:
-                                pass
-                    if not tmdb_info:
-                        try:
-                            self.save_data(cache_key + "_miss", {"ts": time.time()})
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-            if tmdb_info:
-                tmdbid = tmdb_info.get("id")
-                poster_path = tmdb_info.get("poster_path", "")
-                if poster_path and not poster:
-                    poster = f"https://image.tmdb.org/t/p/w500{poster_path}"
-            else:
-                tmdbid = None
-                douban_item = self.__douban_match(
-                    title, self.__extract_year(item), MediaType.TV)
+                douban_item = self.__read_douban_cache(title, movie_year)
                 if douban_item:
                     return MediaInfo(
-                        type=MediaType.TV,
+                        type=MediaType.MOVIE,
                         media_source=MediaSource.Douban,
                         title=title,
                         year=douban_item.get("year"),
                         media_id=douban_item["id"],
                         poster_path=douban_item.get("pic") or poster,
+                        overview=f"票房: {item.get('box_office', '')} | 上映: {item.get('days', '')} | 场次: {item.get('show_count', '')}",
+                    )
+                return MediaInfo(
+                    type=MediaType.MOVIE,
+                    media_source=MediaSource.TMDB,
+                    title=title,
+                    year=None,
+                    media_id="",
+                    poster_path=poster or self.__poster_proxy_url(
+                        title, category, self.__extract_year(item)),
+                    overview=f"票房: {item.get('box_office', '')} | 上映: {item.get('days', '')} | 场次: {item.get('show_count', '')}",
+                )
+            # 剧集/综艺：纯读 TMDB 缓存 -> 豆瓣缓存兜底 -> 标题条目
+            cache_key = self.__tmdb_cache_key(title)
+            try:
+                cached_info = self.get_data(cache_key)
+                if self.__cache_fresh(cached_info, TMDB_CACHE_TTL):
+                    tmdbid = cached_info.get("id")
+                    poster_path = cached_info.get("poster_path", "")
+                    if poster_path and not poster:
+                        poster = self.__tmdb_image_url(poster_path)
+                    return MediaInfo(
+                        type=MediaType.TV,
+                        media_source=MediaSource.TMDB,
+                        title=title,
+                        year=None,
+                        media_id=str(tmdbid) if tmdbid else "",
+                        poster_path=poster,
                         overview=f"热度: {item.get('heat', 0)} | 播放: {item.get('plays', '')} | 平台: {item.get('platform', '')}",
                     )
-
-            media_id = str(tmdbid) if tmdbid else str(item.get("seriesId", ""))
+            except Exception:
+                pass
+            douban_item = self.__read_douban_cache(title, self.__extract_year(item))
+            if douban_item:
+                return MediaInfo(
+                    type=MediaType.TV,
+                    media_source=MediaSource.Douban,
+                    title=title,
+                    year=douban_item.get("year"),
+                    media_id=douban_item["id"],
+                    poster_path=douban_item.get("pic") or poster,
+                    overview=f"热度: {item.get('heat', 0)} | 播放: {item.get('plays', '')} | 平台: {item.get('platform', '')}",
+                )
             return MediaInfo(
                 type=MediaType.TV,
                 media_source=MediaSource.TMDB,
                 title=title,
                 year=None,
-                media_id=media_id,
-                poster_path=poster,
+                media_id="",
+                poster_path=poster or self.__poster_proxy_url(
+                    title, category, self.__extract_year(item)),
                 overview=f"热度: {item.get('heat', 0)} | 播放: {item.get('plays', '')} | 平台: {item.get('platform', '')}",
             )
 
@@ -1275,7 +1477,7 @@ class MaoyanTop30(_PluginBase):
         return Response(success=True, data=results)
 
     def get_page(self) -> List[dict]:
-        return []
+        pass
 
     def stop_service(self) -> None:
         with self._warmup_lock:
