@@ -31,14 +31,14 @@
     "name": "猫眼TOP30探索",
     "description": "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。",
     "labels": "榜单,剧集,猫眼",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "v2": false,
     "v3": false,
     "history": {
-      "v2.0.0": "新增 TMDB 镜像域名/海报源配置、海报代理、一键重新识别与刷新、识别缓存清理等运维 API，识别与运维能力大幅增强。"
+      "v2.0.1": "优化标题识别：新增标题变体生成，提升识别准确率。"
     }
   },
   "ugnasfeedback": {

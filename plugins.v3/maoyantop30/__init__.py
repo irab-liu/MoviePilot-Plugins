@@ -166,7 +166,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -328,6 +328,33 @@ class MaoyanTop30(_PluginBase):
         t2 = re.sub(r"[\s\-·]*\d+$", "", t2)
         # 去首尾空白
         return t2.strip()
+
+    @staticmethod
+    def __title_variants(title: str) -> list:
+        """生成宽松搜索候选标题，用于豆瓣严格匹配失败后的兜底。
+
+        覆盖猫眼片名与豆瓣条目的常见差异：
+        - 去书名号/引号（《XX》 -> XX）
+        - 去副标题（XX：YY / XX - YY / XX·YY -> XX）
+        - 去尾部括号（XX（2026） -> XX）
+        只返回与原名不同的候选，按优先级排序。
+        """
+        variants = []
+        t = (title or "").strip()
+        if not t:
+            return variants
+        cleaned = re.sub(r"[《》〈〉「」『』\"'“”]", "", t).strip()
+        if cleaned and cleaned != t:
+            variants.append(cleaned)
+        for sep in ("：", ":", " - ", " — ", "·", "｜", "|"):
+            if sep in t:
+                head = t.split(sep)[0].strip()
+                if head and head != t and head not in variants:
+                    variants.append(head)
+        stripped = re.sub(r"[（(].*?[）)]\s*$", "", t).strip()
+        if stripped and stripped != t and stripped not in variants:
+            variants.append(stripped)
+        return variants
 
     @staticmethod
     def __extract_year(item: dict) -> Optional[str]:
@@ -502,6 +529,15 @@ class MaoyanTop30(_PluginBase):
             if not result and year:
                 result = self.chain.match_doubaninfo(
                     name=norm, mtype=mtype, year=None, raise_exception=False)
+            # 宽松匹配：模块响应但搜不到（空 dict）时换候选标题重试；None（模块未启用）则跳过
+            if isinstance(result, dict) and not result:
+                for variant in self.__title_variants(norm):
+                    result = self.chain.match_doubaninfo(
+                        name=variant, mtype=mtype, year=None, raise_exception=False)
+                    if result and result.get("id"):
+                        logger.info(
+                            "猫眼TOP30豆瓣宽松匹配 [%s] -> [%s] 命中", norm, variant)
+                        break
             if result and result.get("id"):
                 item = {
                     "id": str(result.get("id")),
@@ -517,8 +553,16 @@ class MaoyanTop30(_PluginBase):
                     pass
                 logger.info("猫眼TOP30豆瓣兜底命中 [%s] -> %s", norm, item["id"])
                 return item
-            # 豆瓣也未命中（模块未启用或搜索无结果）：打日志便于诊断，写 miss 缓存
-            logger.warning("猫眼TOP30豆瓣兜底未命中 [%s]（豆瓣模块可能未启用或无结果）", norm)
+            # 豆瓣也未命中：区分「模块未响应」vs「搜索无结果」以便定位，再写 miss 缓存
+            if result is None:
+                logger.warning(
+                    "猫眼TOP30豆瓣兜底未命中 [%s]：豆瓣模块未启用或未响应"
+                    "（请检查 设置→模块→豆瓣 是否已启用）", norm)
+            else:
+                logger.warning(
+                    "猫眼TOP30豆瓣兜底未命中 [%s/%s]：豆瓣搜索无匹配结果"
+                    "（标题或年份对不上，可去豆瓣官网核对条目名）",
+                    norm, year or "-")
             try:
                 self.save_data(cache_key, {"ts": time.time(), "id": None})
             except Exception:
