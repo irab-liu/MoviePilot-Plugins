@@ -8,9 +8,9 @@
 
 ### 1. 猫眼热度榜 (MaoyanDianYing)
 
-**版本**：v1.2.1
+**版本**：v1.2.2
 
-**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.1：优化详情页详情数据缓存与演员信息获取，前端构建优化。
+**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.2：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态，TMDB 搜索缓存 7 天有效期，清理缓存支持分类统计并同步清理通知记录。
 
 **功能**：
 - 自动抓取猫眼网播热度 TOP30 剧集
@@ -30,7 +30,7 @@
 
 ### 2. 猫眼TOP30探索 (MaoyanTop30)
 
-**版本**：v2.1.0
+**版本**：v1.1.1
 
 **描述**：让探索支持猫眼电视剧-top30，思路来源于 DDSRem 大佬的项目实现。
 
@@ -90,20 +90,16 @@
 ## 📋 版本历史
 
 ### MaoyanDianYing
-- v1.2.1：优化详情页详情数据缓存与演员信息获取，前端构建优化。
+- v1.2.2：订阅归属用户名改为"猫眼热度"，多用户环境可按用户名区分自动订阅
+- v1.2.1：修复海报/开播日期脏缓存不重查、手动刷新触发今日上新提醒、手机版设置页栅格布局+下拉框描边
 - v1.2.0：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态，TMDB 搜索缓存 7 天有效期，清理缓存支持分类统计并同步清理通知记录
-- v1.1.1：新增提醒和清理缓存功能，tmdb识别错误时可点击清理缓存，刷新功能是增量如果有识别错误不会矫正
+- v1.1.2：新增提醒和清理缓存功能，tmdb识别错误时可点击清理缓存，刷新功能是增量如果有识别错误不会矫正
+- v1.1.1：增加定时自动刷新功能，可配置刷新间隔
 - v1.1.0：新增海报点击打开媒体详情页功能
 - v1.0.6：修复媒体库状态检查异常处理，增强日志诊断
 - v1.0.0：首次发布
 
 ### MaoyanTop30
-- v2.1.0：新增探索页提示界面与缓存状态查询。
-- v2.0.1：优化标题识别：新增标题变体生成，提升识别准确率。
-- v2.0.0：新增 TMDB 镜像域名/海报源配置、海报代理、一键重新识别与刷新、识别缓存清理等运维 API，识别与运维能力大幅增强。
-- v1.3.6：修复 Python 3.14 日志递归爆栈（SafeLogger 保护），识别与抓取并发优化。
-- v1.3.4：优化识别准确性：TMDB精确匹配优先、豆瓣回退、标题归一化，支持电影/综艺多分类抓取与缓存有效期控制。
-- v1.1.3：新增daemon线程预热TMDB缓存 + MediaType枚举序列化修复 + 热重载幂等
 - v1.1.1：增加定时自动刷新功能，可配置刷新间隔
 - v1.0.0：首次发布
 
@@ -117,8 +113,9 @@
 
 ## 🔗 下载链接
 
-- [MaoyanDianYing v1.2.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.1)
-- [MaoyanTop30 v2.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.0)
+- [MaoyanDianYing v1.2.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.2)
+- [MaoyanDianYing v1.1.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.1.2)
+- [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
 - [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
 
