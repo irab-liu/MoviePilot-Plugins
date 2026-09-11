@@ -166,7 +166,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "2.0.1"
+    plugin_version = "2.1.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -753,6 +753,76 @@ class MaoyanTop30(_PluginBase):
             _type_row("{{category == '电视剧+网络剧' || !category}}",
                       TYPE_OPTIONS[CATEGORY_TV]),
         ]
+
+    def __list_cache_status(self, key: str) -> tuple:
+        """读取榜单缓存状态：返回 (state, 状态文案, 补充文案)。
+
+        - 缓存新鲜（<=3h）：("fresh", "缓存数据", "缓存时间 MM-DD HH:MM")
+        - 缓存过期或不存在：("expired", "缓存过期", "已自动更新数据")
+        """
+        ts = 0
+        try:
+            cached = self.get_data(key)
+            if isinstance(cached, dict):
+                ts = cached.get("ts") or 0
+        except Exception:
+            ts = 0
+        if ts and time.time() - ts <= CACHE_TTL:
+            fmt = time.strftime("%m-%d %H:%M", time.localtime(ts))
+            return ("fresh", "缓存数据", f"缓存时间 {fmt}")
+        return ("expired", "缓存过期", "已自动更新数据")
+
+    def maoyan_hint_ui(self) -> List[dict]:
+        """探索页提示行：缓存状态 + 接口说明（chip 样式与种类/题材行一致）。
+
+        每种类一行（show 联动）：左侧 VLabel 标签「数据状态」，
+        右侧 VChip 组（状态 + 时间/更新说明 + 接口说明，纯展示）。
+        """
+        hint_text = ("猫眼数据非标准数据接口，为避免流控，"
+                     "每次触发探索页时抓取数据缓存3小时")
+        rows = []
+        for cat, key in ((CATEGORY_MOVIE, MOVIE_CACHE_KEY),
+                         (CATEGORY_VARIETY, VARIETY_CACHE_KEY),
+                         (CATEGORY_TV, self._cache_key)):
+            _state, t1, t2 = self.__list_cache_status(key)
+            if cat == CATEGORY_MOVIE:
+                show = "{{category == '电影'}}"
+            elif cat == CATEGORY_VARIETY:
+                show = "{{category == '综艺'}}"
+            else:
+                show = "{{category == '电视剧+网络剧' || !category}}"
+            rows.append({
+                "component": "div",
+                "props": {"class": "flex justify-start items-center",
+                          "show": show},
+                "content": [
+                    {
+                        "component": "div",
+                        "props": {"class": "mr-5"},
+                        "content": [{"component": "VLabel", "text": "状态"}],
+                    },
+                    {
+                        "component": "VChipGroup",
+                        # 独立 model 避免与种类/题材筛选联动；窄屏横向滑动不折行
+                        "props": {"model": "hint_sel"},
+                        "content": [
+                            {"component": "VChip",
+                             "props": {"filter": True, "tile": True,
+                                       "value": t1},
+                             "text": t1},
+                            {"component": "VChip",
+                             "props": {"filter": True, "tile": True,
+                                       "value": t2},
+                             "text": t2},
+                            {"component": "VChip",
+                             "props": {"filter": True, "tile": True,
+                                       "value": hint_text},
+                             "text": hint_text},
+                        ],
+                    },
+                ],
+            })
+        return rows
 
     def get_state(self) -> bool:
         """返回插件启用状态。"""
@@ -1539,7 +1609,9 @@ class MaoyanTop30(_PluginBase):
             mediaid_prefix="maoyan",
             api_path=f"plugin/MaoyanTop30/maoyan_top30_discover?apikey={settings.API_TOKEN}",
             filter_params={"category": None, "type": None},
-            filter_ui=self.maoyan_category_filter_ui() + self.maoyan_filter_ui(),
+            filter_ui=(self.maoyan_category_filter_ui()
+                       + self.maoyan_filter_ui()
+                       + self.maoyan_hint_ui()),
             depends={"type": ["category"]},
         )
         if not event_data.extra_sources:

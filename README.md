@@ -30,7 +30,7 @@
 
 ### 2. 猫眼TOP30探索 (MaoyanTop30)
 
-**版本**：v2.0.1
+**版本**：v2.1.0
 
 **描述**：让探索支持猫眼电视剧-top30，思路来源于 DDSRem 大佬的项目实现。
 
@@ -98,6 +98,7 @@
 - v1.0.0：首次发布
 
 ### MaoyanTop30
+- v2.1.0：新增探索页提示界面与缓存状态查询。
 - v2.0.1：优化标题识别：新增标题变体生成，提升识别准确率。
 - v2.0.0：新增 TMDB 镜像域名/海报源配置、海报代理、一键重新识别与刷新、识别缓存清理等运维 API，识别与运维能力大幅增强。
 - v1.3.6：修复 Python 3.14 日志递归爆栈（SafeLogger 保护），识别与抓取并发优化。
@@ -117,7 +118,7 @@
 ## 🔗 下载链接
 
 - [MaoyanDianYing v1.2.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.1)
-- [MaoyanTop30 v2.0.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.0.1)
+- [MaoyanTop30 v2.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.0)
 - [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
 
