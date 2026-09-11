@@ -150,9 +150,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.1：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.2：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.2.1"
+    plugin_version = "1.2.2"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -892,7 +892,7 @@ class MaoyanDianYing(_PluginBase):
                 mtype=MediaType.TV,
                 media_source="themoviedb",
                 media_id=str(tmdbid),
-                username=None,
+                username="猫眼热度",
             )
             if sub_id:
                 logger.info("【添加订阅】成功：%s (TMDB ID: %s, 订阅 ID: %d)", name, tmdbid, sub_id)
