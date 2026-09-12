@@ -8,10 +8,8 @@
 
 import re
 import sys as _sys
-import base64
 import json
 import hashlib
-import random
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -124,6 +122,8 @@ VARIETY_CACHE_KEY = "maoyantop30_variety_data"
 MOVIE_CACHE_KEY = "maoyantop30_movie_data"
 # 探索识别并发数：TMDB 逐条直连的线程数（8 平衡速度与代理稳定性，测试未见流控）
 DISCOVER_CONCURRENCY = 8
+# 命中缓存滑动续期限频：距上次续期 >= 7 天才写回 ts（避免每次读都写 DB）
+RENEW_TTL = 7 * 24 * 3600
 
 
 
@@ -131,12 +131,8 @@ DISCOVER_CONCURRENCY = 8
 HEAT_URL = "https://piaofang.maoyan.com/web-heat"
 # 综艺热度接口（免签，seriesType=2 为综艺）
 VARIETY_URL = "https://piaofang.maoyan.com/dashboard/webHeatData"
-# 电影票房榜接口（当年综合票房，SSR HTML，免签）
-MOVIE_RANK_URL = "https://piaofang.maoyan.com/rankings/year"
-# 电影实时综合票房接口（需签名）
+# 电影实时综合票房接口（免签：直接带 showDate 即返回 200）
 MOVIE_AJAX_URL = "https://piaofang.maoyan.com/dashboard-ajax/movie"
-# 签名固定 key（veri.js 混淆还原）
-MAOYAN_SIGN_KEY = "A013F70DB97834C0A5492378BD76C53A"
 
 # 种类定义
 CATEGORY_ALL = "全部"
@@ -166,7 +162,7 @@ class MaoyanTop30(_PluginBase):
     plugin_name = "猫眼TOP30探索"
     plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "2.1.0"
+    plugin_version = "2.1.1"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
@@ -236,17 +232,32 @@ class MaoyanTop30(_PluginBase):
         thread.start()
         logger.info("【预热】手动触发线程已启动")
 
-    def __warmup(self):
+    def __warmup(self, allow_fetch: bool = True):
         """
         预热：抓取榜单并缓存 TMDB 搜索结果。
         纯同步实现，在 daemon 线程中运行，不依赖事件循环。
+
+        :param allow_fetch: True=读榜单缓存过期才联网抓取（启动/手动刷新按钮）；
+                            False=纯读缓存不联网（定时预热只做识别，榜单抓取
+                            只留给探索页与启动时触发）。
         """
         logger.info("【预热】开始...")
         total_cached = 0
         # 三类榜单分别预热（剧集/综艺走 TV，电影走 MOVIE + _movie 缓存后缀）
+        list_keys = {
+            CATEGORY_TV: self._cache_key,
+            CATEGORY_VARIETY: VARIETY_CACHE_KEY,
+            CATEGORY_MOVIE: MOVIE_CACHE_KEY,
+        }
         for category in (CATEGORY_TV, CATEGORY_VARIETY, CATEGORY_MOVIE):
             try:
-                heat_list = self.__fetch_category_list(category)
+                if allow_fetch:
+                    heat_list = self.__fetch_category_list(category)
+                else:
+                    # 定时预热：纯读缓存不联网（电影额外校验当天日期）
+                    heat_list = self.__read_cached_list(
+                        list_keys[category],
+                        date_check=(category == CATEGORY_MOVIE)) or []
                 if not heat_list:
                     logger.warning("【预热】%s 榜单数据为空，跳过", category)
                     continue
@@ -489,7 +500,8 @@ class MaoyanTop30(_PluginBase):
         try:
             cached = self.get_data(cache_key)
             if isinstance(cached, dict) and cached.get("id"):
-                if self.__cache_fresh(cached, DOUBAN_HIT_TTL):
+                if self.__cache_fresh(cached, DOUBAN_HIT_TTL,
+                                      renew_key=cache_key, renew_ttl=RENEW_TTL):
                     return cached
         except Exception:
             pass
@@ -677,7 +689,8 @@ class MaoyanTop30(_PluginBase):
             cached = self.get_data(cache_key)
         except Exception:
             return ""
-        if not self.__cache_fresh(cached, TMDB_CACHE_TTL):
+        if not self.__cache_fresh(cached, TMDB_CACHE_TTL,
+                                  renew_key=cache_key, renew_ttl=RENEW_TTL):
             return ""
         for gid in (cached.get("genre_ids") or []):
             if gid in TMDB_GENRES:
@@ -844,7 +857,7 @@ class MaoyanTop30(_PluginBase):
             "name": "猫眼TOP30缓存预热",
             "trigger": IntervalTrigger(hours=3),
             "func": self.__warmup,
-            "kwargs": {},
+            "func_kwargs": {"allow_fetch": False},
         }]
 
     # 注意：不注册 get_module()，避免宿主识别链轮询我们插件。
@@ -867,14 +880,30 @@ class MaoyanTop30(_PluginBase):
             }
         self.save_data(self._identity_cache_key, dict(list(identities.items())[-2000:]))
 
-    def __cache_fresh(self, cached: dict, ttl: float) -> bool:
-        """判断缓存是否在 TTL 有效期内；无 ts 的旧版缓存视为有效（识别结果稳定）。"""
+    def __cache_fresh(self, cached: dict, ttl: float,
+                      renew_key: str = None, renew_ttl: float = None) -> bool:
+        """判断缓存是否在 TTL 有效期内；无 ts 的旧版缓存视为有效（识别结果稳定）。
+
+        提供 renew_key/renew_ttl 时启用滑动续期：命中且距上次续期 >= renew_ttl
+        才写回 ts=now，实现「持续使用永不过期、长期不访问才清理」。miss 缓存
+        与榜单缓存不传 renew 参数，保持硬 TTL。
+        """
         if not isinstance(cached, dict):
             return False
         ts = cached.get("ts")
         if not ts:
             return True
-        return time.time() - ts <= ttl
+        fresh = time.time() - ts <= ttl
+        if fresh and renew_key and renew_ttl:
+            # 续期限频：距上次续期 >= renew_ttl 才写回，避免每次读都写 DB
+            if time.time() - ts >= renew_ttl:
+                try:
+                    renewed = dict(cached)
+                    renewed["ts"] = time.time()
+                    self.save_data(renew_key, renewed)
+                except Exception:
+                    pass
+        return fresh
 
     def __clear_recognition_cache(self) -> int:
         """清空 TMDB/豆瓣识别缓存（tmdb2_/douban2_ 前缀），返回清除条数。
@@ -947,7 +976,7 @@ class MaoyanTop30(_PluginBase):
             logger.debug("缓存命中（%d 条）", len(cached))
             return cached
 
-        logger.info("开始抓取猫眼热度列表: %s", HEAT_URL)
+        logger.info("正在联网抓取电视剧信息")
         try:
             resp = RequestUtils(headers=HEADERS, timeout=15).get_res(HEAT_URL)
             if resp is None or not resp.ok:
@@ -968,7 +997,7 @@ class MaoyanTop30(_PluginBase):
             return []
 
         heat_data = data.get("pageData", {}).get("webHeatData", [])
-        logger.info("成功解析 webHeatData，共 %d 条", len(heat_data))
+        logger.info("成功抓取到电视剧信息共 %d 条", len(heat_data))
 
         results = []
         for idx, item in enumerate(heat_data[:30]):
@@ -996,7 +1025,7 @@ class MaoyanTop30(_PluginBase):
         if cached is not None:
             logger.debug("综艺缓存命中（%d 条）", len(cached))
             return cached
-        logger.info("开始抓取猫眼综艺列表: %s", VARIETY_URL)
+        logger.info("正在联网抓取综艺信息")
         params = {"seriesType": "2", "platformType": "", "showDate": "2",
                   "dateType": "0", "rankType": "0", "limit": ""}
         try:
@@ -1028,42 +1057,9 @@ class MaoyanTop30(_PluginBase):
                 "seriesId": series.get("seriesId", 0),
                 "poster": series.get("poster", "") or series.get("img", ""),
             })
-        logger.info("成功解析综艺列表，共 %d 条", len(results))
+        logger.info("成功抓取到综艺信息共 %d 条", len(results))
         self.__save_cached_list(VARIETY_CACHE_KEY, results)
         return results
-
-    @staticmethod
-    def __maoyan_sign(params: dict) -> dict:
-        """
-        生成猫眼签名参数（还原自 veri.js 的 getQueryKey）。
-
-        签名串：method/timeStamp/User-Agent(b64)/index/channelId/sVersion/key
-        顺序固定，md5 后作为 signKey；key 字段不随请求发送。
-        """
-        ts = int(time.time() * 1000)
-        ua_b64 = base64.b64encode(HEADERS["User-Agent"].encode()).decode()
-        index = int(1000 * random.random() + 1)
-        raw = "&".join([
-            f"method=GET",
-            f"timeStamp={ts}",
-            f"User-Agent={ua_b64}",
-            f"index={index}",
-            f"channelId=40009",
-            f"sVersion=2",
-            f"key={MAOYAN_SIGN_KEY}",
-        ])
-        sign = hashlib.md5(raw.encode()).hexdigest()
-        signed = dict(params)
-        signed.update({
-            "method": "GET",
-            "timeStamp": str(ts),
-            "User-Agent": ua_b64,
-            "index": str(index),
-            "channelId": "40009",
-            "sVersion": "2",
-            "signKey": sign,
-        })
-        return signed
 
     def __fetch_movie_list(self) -> List[Dict[str, Any]]:
         """抓取猫眼当日实时综合票房榜（dashboard-ajax/movie，需签名）"""
@@ -1073,7 +1069,7 @@ class MaoyanTop30(_PluginBase):
         if cached is not None:
             logger.debug("电影缓存命中（%d 条）", len(cached))
             return cached
-        logger.info("开始抓取电影综合票房: %s", MOVIE_AJAX_URL)
+        logger.info("正在联网抓取电影信息")
         try:
             # 免签：实测 dashboard-ajax/movie 直接带 showDate=YYYYMMDD 即返回
             # 200（连测 5/5 稳定），无需 veri.js 签名。
@@ -1107,7 +1103,7 @@ class MaoyanTop30(_PluginBase):
                 "box_rate": item.get("boxRate", ""),
                 "show_count": item.get("showCount", ""),
             })
-        logger.info("成功解析电影综合票房，共 %d 条", len(results))
+        logger.info("成功抓取到电影信息共 %d 条", len(results))
         self.__save_cached_list(MOVIE_CACHE_KEY, results, date=today.strftime("%Y%m%d"))
         return results
 
@@ -1314,7 +1310,8 @@ class MaoyanTop30(_PluginBase):
         # 1. TMDB 缓存命中 -> 直接重定向
         try:
             cached = self.get_data(cache_key)
-            if self.__cache_fresh(cached, TMDB_CACHE_TTL):
+            if self.__cache_fresh(cached, TMDB_CACHE_TTL,
+                                  renew_key=cache_key, renew_ttl=RENEW_TTL):
                 pp = (cached or {}).get("poster_path", "")
                 if pp:
                     return RedirectResponse(self.__tmdb_image_url(pp))
@@ -1481,7 +1478,8 @@ class MaoyanTop30(_PluginBase):
                 movie_cache_key = self.__tmdb_cache_key(title) + "_movie"
                 try:
                     cached_m = self.get_data(movie_cache_key)
-                    if self.__cache_fresh(cached_m, TMDB_CACHE_TTL):
+                    if self.__cache_fresh(cached_m, TMDB_CACHE_TTL,
+                                          renew_key=movie_cache_key, renew_ttl=RENEW_TTL):
                         movie_id = cached_m.get("id")
                         poster_path_m = cached_m.get("poster_path", "")
                         if poster_path_m and not poster:
@@ -1522,7 +1520,8 @@ class MaoyanTop30(_PluginBase):
             cache_key = self.__tmdb_cache_key(title)
             try:
                 cached_info = self.get_data(cache_key)
-                if self.__cache_fresh(cached_info, TMDB_CACHE_TTL):
+                if self.__cache_fresh(cached_info, TMDB_CACHE_TTL,
+                                      renew_key=cache_key, renew_ttl=RENEW_TTL):
                     tmdbid = cached_info.get("id")
                     poster_path = cached_info.get("poster_path", "")
                     if poster_path and not poster:
