@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+
+# 临时打包产物
+*.zip
+*.tar.gz
+
+# 本地发布规则备忘录（不提交仓库）
+发布规则备忘录.md

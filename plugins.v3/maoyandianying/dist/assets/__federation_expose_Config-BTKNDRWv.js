@@ -42,7 +42,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       refresh_interval: 6,
       reminder_enabled: false,
       reminder_msgtype: "Plugin",
-      run_remind: false
+      run_remind: false,
+      enable_discovery: false
     });
     const saving = ref(false);
     const clearingCache = ref(false);
@@ -81,6 +82,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         form.reminder_enabled = Boolean(config.reminder_enabled);
         form.reminder_msgtype = config.reminder_msgtype ? String(config.reminder_msgtype) : "Plugin";
         form.run_remind = Boolean(config.run_remind);
+        form.enable_discovery = Boolean(config.enable_discovery);
       },
       { immediate: true, deep: true }
     );
@@ -114,7 +116,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "mr-2",
                 color: "primary"
               }),
-              _cache[6] || (_cache[6] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
+              _cache[7] || (_cache[7] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
               _createVNode(_component_VSpacer),
               _createVNode(_component_VBtn, {
                 icon: "mdi-close",
@@ -128,7 +130,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[9] || (_cache[9] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
+              _cache[10] || (_cache[10] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
               _createVNode(_component_VRow, { class: "mb-3" }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VCol, {
@@ -150,6 +152,24 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }),
                   _createVNode(_component_VCol, {
                     cols: "12",
+                    sm: "6",
+                    md: "5"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_VSwitch, {
+                        modelValue: form.enable_discovery,
+                        "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => form.enable_discovery = $event),
+                        label: "在发现页显示",
+                        color: "primary",
+                        "hide-details": "",
+                        density: "compact",
+                        messages: "开启后猫眼榜单将出现在左侧发现菜单中"
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_VCol, {
+                    cols: "12",
                     sm: "auto"
                   }, {
                     default: _withCtx(() => [
@@ -165,12 +185,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                             start: "",
                             size: "small"
                           }, {
-                            default: _withCtx(() => [..._cache[7] || (_cache[7] = [
+                            default: _withCtx(() => [..._cache[8] || (_cache[8] = [
                               _createTextVNode("mdi-delete-sweep", -1)
                             ])]),
                             _: 1
                           }),
-                          _cache[8] || (_cache[8] = _createTextVNode(" 清理缓存 ", -1))
+                          _cache[9] || (_cache[9] = _createTextVNode(" 清理缓存 ", -1))
                         ]),
                         _: 1
                       }, 8, ["loading"])
@@ -190,7 +210,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     default: _withCtx(() => [
                       _createVNode(_component_VSelect, {
                         modelValue: form.refresh_interval,
-                        "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => form.refresh_interval = $event),
+                        "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => form.refresh_interval = $event),
                         items: intervalItems,
                         "item-title": "title",
                         "item-value": "value",
@@ -212,7 +232,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[10] || (_cache[10] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "通知设置", -1)),
+              _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "通知设置", -1)),
               _createVNode(_component_VRow, { class: "mb-3" }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VCol, {
@@ -223,7 +243,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     default: _withCtx(() => [
                       _createVNode(_component_VSwitch, {
                         modelValue: form.reminder_enabled,
-                        "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => form.reminder_enabled = $event),
+                        "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => form.reminder_enabled = $event),
                         label: "开启通知",
                         color: "primary",
                         "hide-details": "",
@@ -240,7 +260,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     default: _withCtx(() => [
                       _createVNode(_component_VSwitch, {
                         modelValue: form.run_remind,
-                        "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => form.run_remind = $event),
+                        "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.run_remind = $event),
                         label: "立即运行一次提醒",
                         color: "secondary",
                         "hide-details": "",
@@ -252,7 +272,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 ]),
                 _: 1
               }),
-              _cache[11] || (_cache[11] = _createElementVNode("div", {
+              _cache[12] || (_cache[12] = _createElementVNode("div", {
                 class: "text-caption grey--text mb-3",
                 style: { "max-width": "560px" }
               }, " 根据插件设置的自动刷新间隔推送今日新增影片，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。 ", -1)),
@@ -266,7 +286,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     default: _withCtx(() => [
                       _createVNode(_component_VSelect, {
                         modelValue: form.reminder_msgtype,
-                        "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.reminder_msgtype = $event),
+                        "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => form.reminder_msgtype = $event),
                         items: msgtypeItems,
                         label: "消息类型",
                         variant: "outlined",
@@ -294,12 +314,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VIcon, { start: "" }, {
-                    default: _withCtx(() => [..._cache[12] || (_cache[12] = [
+                    default: _withCtx(() => [..._cache[13] || (_cache[13] = [
                       _createTextVNode("mdi-content-save", -1)
                     ])]),
                     _: 1
                   }),
-                  _cache[13] || (_cache[13] = _createTextVNode(" 保存 ", -1))
+                  _cache[14] || (_cache[14] = _createTextVNode(" 保存 ", -1))
                 ]),
                 _: 1
               }, 8, ["loading"])
@@ -313,6 +333,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-55101a4b"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-0dc8b010"]]);
 
 export { Config as default };

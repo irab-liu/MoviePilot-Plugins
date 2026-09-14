@@ -150,9 +150,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v1.2.2：修改通知触发条件，根据定时抓取到的数据提醒，已推送不重复推送并附订阅状态。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.0：支持集成至发现页导航，自适应响应式卡片排版，优化TMDB直接检索，修复宿主报错问题。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.2.2"
+    plugin_version = "2.0.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -234,7 +234,7 @@ class MaoyanDianYing(_PluginBase):
                 logger.warning("【预热】榜单数据为空，跳过")
                 return
             cached_count = 0
-            for item in heat_list:
+            for idx, item in enumerate(heat_list):
                 title = item.get("name", "")
                 if not title:
                     continue
@@ -242,29 +242,24 @@ class MaoyanDianYing(_PluginBase):
                 if self.get_data(cache_key):
                     continue
                 try:
-                    meta = _create_meta_info(title)
-                    if not meta:
-                        raise RuntimeError("MoviePilot MetaInfo 不可用")
-                    media_info = self.chain.recognize_media(meta=meta, cache=True)
-                    if media_info and getattr(media_info, "tmdb_id", None):
-                        source = str(getattr(media_info, "media_source", "") or "").lower()
-                        if source and source not in ("themoviedb", "tmdb"):
-                            logger.warning("【TMDB过滤】%s 返回来源=%s，跳过", title, source)
-                            continue
-                        logger.info("【TMDB确认】%s 来源=%s ID=%s", title, source or "themoviedb", getattr(media_info, "tmdb_id", None))
-                        tmdb_id = getattr(media_info, "tmdb_id", None)
-                        # 海报/首播日期/背景图改从 TV 详情（档案）获取，识别只负责提供 tmdb_id
+                    # 直接通过 TMDB 官方 API 搜索电视剧，避免走全局链触发 ImdbModule 异常
+                    tv = TmdbHelper.search_tv(title)
+                    if tv and tv.get("id"):
+                        tmdb_id = tv["id"]
+                        logger.info("【TMDB确认】%s ID=%s", title, tmdb_id)
                         detail = self.__get_detail_with_cache(tmdb_id)
                         result = {
                             "id": tmdb_id,
-                            "name": (detail or {}).get("name") or media_info.title or title,
-                            "poster_path": (detail or {}).get("poster_path") or getattr(media_info, "poster_path", None),
-                            "backdrop_path": (detail or {}).get("backdrop_path") or getattr(media_info, "backdrop_path", None),
-                            "first_air_date": (detail or {}).get("first_air_date") or getattr(media_info, "first_air_date", None),
+                            "name": (detail or {}).get("name") or tv.get("name") or title,
+                            "poster_path": (detail or {}).get("poster_path") or tv.get("poster_path"),
+                            "backdrop_path": (detail or {}).get("backdrop_path") or tv.get("backdrop_path"),
+                            "first_air_date": (detail or {}).get("first_air_date") or tv.get("first_air_date"),
                             "media_type": "TV",
                         }
                         self.__save_cached_tmdb(title, result)
                         cached_count += 1
+                    else:
+                        logger.warning("【TMDB未命中】剧名 '%s' 在 TMDB 未找到匹配项", title)
                 except Exception as e:
                     logger.warning("【预热】TMDB 搜索失败 [%s]: %s", title, e)
             logger.info("【预热】完成，缓存 %d 条 TMDB 结果", cached_count)
@@ -312,11 +307,9 @@ class MaoyanDianYing(_PluginBase):
             pass
 
     def __search_tmdb_with_cache(self, title: str) -> Optional[dict]:
-        """带二级缓存的 TMDB 搜索（优先复用 host TmdbCache via chain.recognize_media）"""
+        """带二级缓存的 TMDB 搜索（优先直接使用 TmdbHelper 查询官方 TMDB）"""
         cached = self.__get_cached_tmdb(title)
         if cached:
-            # 兼容历史缓存：旧数据可能缺海报/首播日期（曾从识别返回值落空写入），
-            # 命中时若富信息缺失则补查 TV 详情并回写，避免空值被缓存固化 7 天。
             if cached.get("id") and (not cached.get("poster_path") or not cached.get("first_air_date")):
                 detail = self.__get_detail_with_cache(cached.get("id"))
                 if detail:
@@ -327,41 +320,23 @@ class MaoyanDianYing(_PluginBase):
                     self.__save_cached_tmdb(title, cached)
             return cached
         try:
-            meta = _create_meta_info(title)
-            if not meta:
-                raise RuntimeError("MoviePilot MetaInfo 不可用")
-            media_info = self.chain.recognize_media(meta=meta, cache=True)
-            if media_info and getattr(media_info, "tmdb_id", None):
-                source = str(getattr(media_info, "media_source", "") or "").lower()
-                if source and source not in ("themoviedb", "tmdb"):
-                    logger.warning("【TMDB过滤】%s 返回来源=%s，跳过", title, source)
-                else:
-                    logger.info("【TMDB确认】%s 来源=%s ID=%s", title, source or "themoviedb", getattr(media_info, "tmdb_id", None))
-                    tmdb_id = getattr(media_info, "tmdb_id", None)
-                    # 海报/首播日期/背景图改从 TV 详情（档案）获取，识别只负责提供 tmdb_id
-                    detail = self.__get_detail_with_cache(tmdb_id)
-                    result = {
-                        "id": tmdb_id,
-                        "name": (detail or {}).get("name") or media_info.title or title,
-                        "poster_path": (detail or {}).get("poster_path") or getattr(media_info, "poster_path", None),
-                        "backdrop_path": (detail or {}).get("backdrop_path") or getattr(media_info, "backdrop_path", None),
-                        "first_air_date": (detail or {}).get("first_air_date") or getattr(media_info, "first_air_date", None),
-                        "media_type": "TV",
-                    }
-                    self.__save_cached_tmdb(title, result)
-                    logger.debug("【TMDB搜索】'%s' → ID %s (host cache)", title, tmdb_id)
-                    return result
+            tv = TmdbHelper.search_tv(title)
+            if tv and tv.get("id"):
+                tmdb_id = tv["id"]
+                detail = self.__get_detail_with_cache(tmdb_id)
+                result = {
+                    "id": tmdb_id,
+                    "name": (detail or {}).get("name") or tv.get("name") or title,
+                    "poster_path": (detail or {}).get("poster_path") or tv.get("poster_path"),
+                    "backdrop_path": (detail or {}).get("backdrop_path") or tv.get("backdrop_path"),
+                    "first_air_date": (detail or {}).get("first_air_date") or tv.get("first_air_date"),
+                    "media_type": "TV",
+                }
+                self.__save_cached_tmdb(title, result)
+                logger.debug("【TMDB搜索】'%s' → ID %s", title, tmdb_id)
+                return result
         except Exception as e:
-            logger.warning("【TMDB搜索】chain.recognize_media '%s' 失败: %s", title, e)
-        # Fallback: direct TmdbApi
-        try:
-            api = TmdbApi(language="zh")
-            result = api.search_tvs(title, "")
-            if result and len(result) > 0:
-                self.__save_cached_tmdb(title, result[0])
-                return result[0]
-        except Exception as e:
-            logger.error("【TMDB搜索】'%s' 失败: %s", title, e)
+            logger.warning("【TMDB搜索】'%s' 失败: %s", title, e)
         return None
 
     def _get_cached_status(self, tmdbid: int, name: str = "") -> Optional[str]:
@@ -769,6 +744,10 @@ class MaoyanDianYing(_PluginBase):
                                             ],
                                         },
                                     },
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {"model": "enable_discovery", "label": "在发现页显示"},
+                                    },
                                 ],
                             },
                         ],
@@ -802,12 +781,44 @@ class MaoyanDianYing(_PluginBase):
             "reminder_enabled": False,
             "reminder_msgtype": "Plugin",
             "run_remind": False,
+            "enable_discovery": False,
         }
 
     def get_page(self) -> list[dict]:
         """Vue 远程组件模式下不再使用 Vuetify JSON 渲染。"""
         logger.info("【数据页面】返回空 JSON，交由远程 Page 组件渲染")
         return []
+
+    def get_sidebar_nav(self) -> list[dict[str, Any]]:
+        """返回侧边栏导航配置"""
+        enable = False
+        if hasattr(self, "_config") and self._config:
+            enable = self._config.get("enable_discovery", False)
+        elif hasattr(self, "config") and self.config:
+            enable = self.config.get("enable_discovery", False)
+        elif hasattr(self, "get_config"):
+            config = self.get_config()
+            if config:
+                enable = config.get("enable_discovery", False)
+            
+        # return empty for default implicit mounting under 'Plugin', unless section discovery is explicitly opted-in
+        if not enable:
+            return [{
+                "nav_key": "main", # 这个不能省略，基座要读
+                "title": "猫眼榜单",
+                "icon": "mdi-cat",
+                "order": 1,
+            }]
+            
+        return [
+            {
+                "nav_key": "main",
+                "title": "猫眼榜单",
+                "icon": "mdi-cat",
+                "section": "discovery", 
+                "order": 10,
+            }
+        ]
 
     def stop_service(self) -> None:
         """标记插件停用；定时任务由 MoviePilot 根据 ``get_service`` 统一移除。"""
