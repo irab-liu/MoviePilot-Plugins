@@ -23,6 +23,16 @@
             density="compact"
           />
         </VCol>
+        <VCol cols="12" sm="6" md="5">
+          <VSwitch
+            v-model="form.enable_discovery"
+            label="在发现页显示"
+            color="primary"
+            hide-details
+            density="compact"
+            messages="开启后猫眼榜单将出现在左侧发现菜单中"
+          />
+        </VCol>
         <VCol cols="12" sm="auto">
           <VBtn
             variant="tonal"
@@ -154,6 +164,7 @@ const form = reactive({
   reminder_enabled: false,
   reminder_msgtype: 'Plugin',
   run_remind: false,
+  enable_discovery: false,
 })
 const saving = ref(false)
 const clearingCache = ref(false)
@@ -198,6 +209,7 @@ watch(
       ? String(config.reminder_msgtype)
       : 'Plugin'
     form.run_remind = Boolean(config.run_remind)
+    form.enable_discovery = Boolean(config.enable_discovery)
   },
   { immediate: true, deep: true },
 )

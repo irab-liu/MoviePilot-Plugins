@@ -35,17 +35,17 @@
     </VRow>
 
     <!-- 热度列表 -->
-    <VRow v-else>
-      <VCol v-for="item in items" :key="item.rank" cols="12" md="4">
-        <VCard variant="outlined" class="mb-2" rounded="lg">
+    <div v-else class="maoyan-cards-grid">
+      <div v-for="item in items" :key="item.rank" class="maoyan-card-wrapper">
+        <VCard variant="outlined" rounded="lg" class="h-100">
           <VRow no-gutters align="center">
             <!-- 海报区域 -->
             <VCol cols="auto" class="pa-2">
               <div style="position: relative">
                 <VImg
                   :src="resolvePoster(item.poster, 'card-' + item.rank)"
-                  width="120"
-                  height="160"
+                  width="133"
+                  height="200"
                   cover
                   rounded="sm"
                   class="bg-grey-lighten-3"
@@ -55,7 +55,7 @@
                 />
                 <!-- 状态标签（海报底部） -->
                 <div
-                  :style="`position: absolute; bottom: 0; left: 0; right: 0; background: ${getStatusColor(item)}; color: white; font-size: 10px; text-align: center; padding: 2px 0; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;`"
+                  :style="`position: absolute; bottom: 0; left: 0; right: 0; background: ${getStatusColor(item)}; color: white; font-size: 12px; text-align: center; padding: 3px 0; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;`"
                 >
                   {{ item.status || '未添加订阅' }}
                 </div>
@@ -63,48 +63,52 @@
             </VCol>
 
             <!-- 信息区域 -->
-            <VCol class="pa-2">
-              <div class="d-flex align-center mb-1">
-                <VChip size="x-small" color="primary" class="mr-1">{{ item.rank }}</VChip>
-                <span style="font-size: 12px; font-weight: bold;">{{ item.name }}</span>
-              </div>
-              <div class="text-grey mb-1" style="font-size: 11px;">
-                <VIcon size="x-small">mdi-television-classic</VIcon>
-                {{ item.platform || '未知平台' }}
-              </div>
-              <div class="text-grey mb-1" style="font-size: 11px;">
-                <VIcon size="x-small">mdi-clock-outline</VIcon>
-                {{ item.days || '未知' }}
-              </div>
-              <div class="text-grey mb-1" style="font-size: 11px;">
-                <VIcon size="x-small">mdi-fire</VIcon>
-                热度: {{ item.heat || 0 }}
-              </div>
-              <div class="text-grey mb-1" style="font-size: 11px;">
-                <VIcon size="x-small">mdi-play-circle-outline</VIcon>
-                {{ item.plays || '未知' }}
-              </div>
-              <div class="text-grey mb-1" style="font-size: 11px;" v-if="item.actors">
-                <VIcon size="x-small">mdi-account-group</VIcon>
-                {{ Array.isArray(item.actors) ? item.actors.join(' / ') : item.actors }}
+            <VCol class="pa-2 d-flex flex-column justify-space-between" style="min-height: 200px;">
+              <div>
+                <div class="d-flex align-center mb-1">
+                  <VChip size="x-small" color="primary" class="mr-1">{{ item.rank }}</VChip>
+                  <span style="font-size: 14px; font-weight: bold; line-height: 1.3;">{{ item.name }}</span>
+                </div>
+                <div class="text-grey mb-1" style="font-size: 12px;">
+                  <VIcon size="small" class="mr-1">mdi-television-classic</VIcon>
+                  {{ item.platform || '未知平台' }}
+                </div>
+                <div class="text-grey mb-1" style="font-size: 12px;">
+                  <VIcon size="small" class="mr-1">mdi-clock-outline</VIcon>
+                  {{ item.days || '未知' }}
+                </div>
+                <div class="text-grey mb-1" style="font-size: 12px;">
+                  <VIcon size="small" color="error" class="mr-1">mdi-fire</VIcon>
+                  热度: {{ item.heat || 0 }}
+                </div>
+                <div class="text-grey mb-1" style="font-size: 12px;">
+                  <VIcon size="small" class="mr-1">mdi-play-circle-outline</VIcon>
+                  {{ item.plays || '未知' }}
+                </div>
+                <div class="text-grey mb-1" style="font-size: 12px;" v-if="item.actors">
+                  <VIcon size="small" class="mr-1">mdi-account-group</VIcon>
+                  {{ Array.isArray(item.actors) ? item.actors.join(' / ') : item.actors }}
+                </div>
               </div>
               <!-- 卡片订阅按钮 -->
-              <VBtn
-                size="x-small"
-                class="mt-1"
-                :color="(item.status || '未添加订阅') === '未添加订阅' ? 'primary' : 'grey'"
-                :variant="(item.status || '未添加订阅') === '未添加订阅' ? 'elevated' : 'tonal'"
-                :loading="isSubscribing(item.tmdbid)"
-                :disabled="(item.status || '未添加订阅') !== '未添加订阅'"
-                @click="subscribe(item)"
-              >
-                {{ (item.status || '未添加订阅') === '未添加订阅' ? '订阅' : item.status }}
-              </VBtn>
+              <div>
+                <VBtn
+                  size="small"
+                  class="mt-1"
+                  :color="(item.status || '未添加订阅') === '未添加订阅' ? 'primary' : 'grey'"
+                  :variant="(item.status || '未添加订阅') === '未添加订阅' ? 'elevated' : 'tonal'"
+                  :loading="isSubscribing(item.tmdbid)"
+                  :disabled="(item.status || '未添加订阅') !== '未添加订阅'"
+                  @click="subscribe(item)"
+                >
+                  {{ (item.status || '未添加订阅') === '未添加订阅' ? '订阅' : item.status }}
+                </VBtn>
+              </div>
             </VCol>
           </VRow>
         </VCard>
-      </VCol>
-    </VRow>
+      </div>
+    </div>
 
     <!-- 媒体详情弹窗 -->
     <VDialog v-model="detailOpen" max-width="1000" scrollable persistent>
@@ -771,5 +775,20 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 响应式自适应网格：保证每张卡片至少 390px，放得下 4 张就排 4 列，空间小自动退到 3 列甚至 2 列，卡片永不被挤压变形 */
+.maoyan-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.maoyan-card-wrapper {
+  display: flex;
+  min-width: 0;
+}
+.maoyan-card-wrapper .v-card {
+  width: 100%;
 }
 </style>
