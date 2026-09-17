@@ -65,19 +65,6 @@ app.modules.themoviedb.tmdbapi = _make_module('app.modules.themoviedb.tmdbapi', 
 app.sdk = _make_module('app.sdk')
 app.sdk.network = _make_module('app.sdk.network', {'RequestUtils': MagicMock})
 app.sdk.logging = _make_module('app.sdk.logging', {'logger': MagicMock()})
-# 服务发现门面：mpnews 推送据此读取企业微信渠道配置与运行实例
-app.sdk.services = _make_module('app.sdk.services', {'NotificationHelper': MagicMock})
-# 运行时配置读取端口：mpnews 封面下载据此取宿主代理
-app.runtime = _make_module('app.runtime')
-app.runtime.settings = _make_module('app.runtime.settings', {
-    'get_runtime_setting': lambda key, default=None: default,
-})
-# UrlUtils：用于组合企业微信接口地址
-app.sdk.network.UrlUtils = type('UrlUtils', (), {
-    'adapt_request_url': staticmethod(
-        lambda host, endpoint: f"{str(host).rstrip('/')}/{str(endpoint).lstrip('/')}"
-    )
-})
 
 class EventType(Enum):
     SubscribeAdded = 'SubscribeAdded'

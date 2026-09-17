@@ -154,13 +154,6 @@
                 <h1 class="d-flex flex-column flex-lg-row align-items-center align-items-lg-baseline">
                   <span>{{ detail.title || selectedItem?.name || '未知名称' }}</span>
                   <span v-if="detail.year" class="text-lg ms-1">（{{ detail.year }}）</span>
-                  <VChip
-                    v-if="detail.season_number"
-                    size="small"
-                    color="primary"
-                    variant="tonal"
-                    class="ms-2"
-                  >第 {{ detail.season_number }} 季</VChip>
                 </h1>
                 <span class="media-attributes">
                   <span v-if="detail.runtime || detail.episode_run_time?.[0]">
@@ -277,18 +270,8 @@
                     <span class="media-fact-value">{{ detail.status }}</span>
                   </div>
                   <div v-if="detail.release_date || detail.first_air_date" class="media-fact">
-                    <span>{{ detail.season_number ? '本季首播' : '发布日期' }}</span>
-                    <span class="media-fact-value">{{ detail.season_number
-                        ? (detail.first_air_date || detail.release_date)
-                        : (detail.release_date || detail.first_air_date) }}</span>
-                  </div>
-                  <div v-if="detail.season_number && detail.number_of_episodes" class="media-fact">
-                    <span>集数</span>
-                    <span class="media-fact-value">第 {{ detail.season_number }} 季 共 {{ detail.number_of_episodes }} 集</span>
-                  </div>
-                  <div v-else-if="detail.number_of_episodes" class="media-fact">
-                    <span>集数</span>
-                    <span class="media-fact-value">{{ detail.number_of_episodes }} 集</span>
+                    <span>发布日期</span>
+                    <span class="media-fact-value">{{ detail.release_date || detail.first_air_date }}</span>
                   </div>
                 </div>
               </div>
@@ -321,8 +304,6 @@ interface HeatItem {
   poster: string
   actors?: string[] | string
   status?: string
-  /** TMDB 季号；>0 表示该剧为多季剧的某一季（如「问心2」-> 2） */
-  season?: number
 }
 
 /** 媒体详情（松散的 TMDB 结构） */
@@ -504,11 +485,7 @@ async function subscribe(item: HeatItem) {
 
   subscribing.value.add(item.tmdbid)
   try {
-    const result = await props.api.post(url, {
-      tmdbid: item.tmdbid,
-      name: item.name,
-      season: item.season || 0,
-    })
+    const result = await props.api.post(url, { tmdbid: item.tmdbid, name: item.name })
     if (result?.success) {
       // 立即更新当前项状态，按钮同步变灰
       item.status = '订阅已添加'
@@ -557,10 +534,7 @@ async function openMediaDetail(item: HeatItem) {
     } else if (result && typeof result === 'object') {
       detail.value = result
     }
-    // 带季数条目：宿主 /media/{id} 返回的是剧集主记录（第 1 季视角），
-    // 用该季数据覆盖简介/首播/海报/演员，避免详情页显示成第 1 季。
-    const seasonCastReady = item.season ? await applySeasonDetail(item) : false
-    if (detail.value?.tmdb_id && !seasonCastReady) {
+    if (detail.value?.tmdb_id) {
       await fetchCast(detail.value.tmdb_id)
     }
   } catch (error: any) {
@@ -568,32 +542,6 @@ async function openMediaDetail(item: HeatItem) {
   } finally {
     detailLoading.value = false
   }
-}
-
-/** 用指定季的详情覆盖详情弹窗内容（简介/首播/海报/演员/集数） */
-async function applySeasonDetail(item: HeatItem): Promise<boolean> {
-  if (!item.season || !detail.value) return false
-  try {
-    const url = buildPluginUrl('get-season')
-    const result = await props.api?.get(url, { params: { tmdbid: item.tmdbid, season: item.season } })
-    const seasonData = result?.data
-    if (!seasonData) return false
-    // 仅覆盖季级字段，其余（类型/时长/评分等）保留宿主数据
-    if (seasonData.overview) detail.value.overview = seasonData.overview
-    if (seasonData.air_date) detail.value.first_air_date = seasonData.air_date
-    if (seasonData.poster_path) detail.value.poster_path = seasonData.poster_path
-    if (seasonData.vote_average) detail.value.vote_average = seasonData.vote_average
-    if (seasonData.episode_count) detail.value.number_of_episodes = seasonData.episode_count
-    detail.value.season_number = seasonData.season_number
-    // 季详情自带演员时直接采用，避免 cast 接口取到主记录（第 1 季）演员
-    if (seasonData.cast?.length) {
-      cast.value = seasonData.cast
-      return true
-    }
-  } catch (e) {
-    console.warn(componentTag, '季详情加载失败', e)
-  }
-  return false
 }
 
 /** 加载演员阵容 */
