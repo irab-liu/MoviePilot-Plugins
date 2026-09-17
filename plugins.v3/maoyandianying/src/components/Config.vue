@@ -103,6 +103,16 @@
             class="maoyan-select"
           />
         </VCol>
+        <VCol cols="12" sm="6" md="5">
+          <VSwitch
+            v-model="form.mpnews_enabled"
+            label="使用图文消息推送"
+            color="primary"
+            hide-details
+            density="compact"
+            messages="改用企业微信图文消息(mpnews)发送，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
+          />
+        </VCol>
       </VRow>
     </VCardText>
 
@@ -165,6 +175,7 @@ const form = reactive({
   reminder_msgtype: 'Plugin',
   run_remind: false,
   enable_discovery: false,
+  mpnews_enabled: false,
 })
 const saving = ref(false)
 const clearingCache = ref(false)
@@ -210,6 +221,7 @@ watch(
       : 'Plugin'
     form.run_remind = Boolean(config.run_remind)
     form.enable_discovery = Boolean(config.enable_discovery)
+    form.mpnews_enabled = Boolean(config.mpnews_enabled)
   },
   { immediate: true, deep: true },
 )

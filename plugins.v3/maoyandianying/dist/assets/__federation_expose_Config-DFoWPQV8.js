@@ -43,7 +43,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       reminder_enabled: false,
       reminder_msgtype: "Plugin",
       run_remind: false,
-      enable_discovery: false
+      enable_discovery: false,
+      mpnews_enabled: false
     });
     const saving = ref(false);
     const clearingCache = ref(false);
@@ -83,6 +84,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         form.reminder_msgtype = config.reminder_msgtype ? String(config.reminder_msgtype) : "Plugin";
         form.run_remind = Boolean(config.run_remind);
         form.enable_discovery = Boolean(config.enable_discovery);
+        form.mpnews_enabled = Boolean(config.mpnews_enabled);
       },
       { immediate: true, deep: true }
     );
@@ -116,7 +118,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "mr-2",
                 color: "primary"
               }),
-              _cache[7] || (_cache[7] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
+              _cache[8] || (_cache[8] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
               _createVNode(_component_VSpacer),
               _createVNode(_component_VBtn, {
                 icon: "mdi-close",
@@ -130,7 +132,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[10] || (_cache[10] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
+              _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "基础设置", -1)),
               _createVNode(_component_VRow, { class: "mb-3" }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VCol, {
@@ -185,12 +187,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                             start: "",
                             size: "small"
                           }, {
-                            default: _withCtx(() => [..._cache[8] || (_cache[8] = [
+                            default: _withCtx(() => [..._cache[9] || (_cache[9] = [
                               _createTextVNode("mdi-delete-sweep", -1)
                             ])]),
                             _: 1
                           }),
-                          _cache[9] || (_cache[9] = _createTextVNode(" 清理缓存 ", -1))
+                          _cache[10] || (_cache[10] = _createTextVNode(" 清理缓存 ", -1))
                         ]),
                         _: 1
                       }, 8, ["loading"])
@@ -232,7 +234,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(_component_VDivider),
           _createVNode(_component_VCardText, { class: "py-4" }, {
             default: _withCtx(() => [
-              _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "通知设置", -1)),
+              _cache[12] || (_cache[12] = _createElementVNode("div", { class: "text-subtitle-2 mb-3 grey--text" }, "通知设置", -1)),
               _createVNode(_component_VRow, { class: "mb-3" }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VCol, {
@@ -272,7 +274,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 ]),
                 _: 1
               }),
-              _cache[12] || (_cache[12] = _createElementVNode("div", {
+              _cache[13] || (_cache[13] = _createElementVNode("div", {
                 class: "text-caption grey--text mb-3",
                 style: { "max-width": "560px" }
               }, " 根据插件设置的自动刷新间隔推送今日新增影片，已经推送过的不会重复推送。“立即运行一次提醒”在无新增时会推送 TOP5 推荐。 ", -1)),
@@ -296,6 +298,24 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       }, null, 8, ["modelValue"])
                     ]),
                     _: 1
+                  }),
+                  _createVNode(_component_VCol, {
+                    cols: "12",
+                    sm: "6",
+                    md: "5"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_VSwitch, {
+                        modelValue: form.mpnews_enabled,
+                        "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => form.mpnews_enabled = $event),
+                        label: "使用图文消息推送",
+                        color: "primary",
+                        "hide-details": "",
+                        density: "compact",
+                        messages: "改用企业微信图文消息(mpnews)发送，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
                   })
                 ]),
                 _: 1
@@ -314,12 +334,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VIcon, { start: "" }, {
-                    default: _withCtx(() => [..._cache[13] || (_cache[13] = [
+                    default: _withCtx(() => [..._cache[14] || (_cache[14] = [
                       _createTextVNode("mdi-content-save", -1)
                     ])]),
                     _: 1
                   }),
-                  _cache[14] || (_cache[14] = _createTextVNode(" 保存 ", -1))
+                  _cache[15] || (_cache[15] = _createTextVNode(" 保存 ", -1))
                 ]),
                 _: 1
               }, 8, ["loading"])
@@ -333,6 +353,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-0dc8b010"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-610838cc"]]);
 
 export { Config as default };
