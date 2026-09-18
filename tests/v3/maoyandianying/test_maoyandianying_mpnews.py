@@ -611,9 +611,9 @@ class TestRichContent:
             "first_air_date": "2026-01-15",
             "number_of_seasons": 2, "number_of_episodes": 24,
         }])
-        assert "评分：8.6" in html
+        assert "评分：" in html and "8.6" in html
         assert "首播：2026-01-15" in html
-        assert "集数：2 季 24 集" in html
+        assert "集数：" in html and "2 季 24 集" in html
 
     def test_each_field_on_its_own_line(self):
         """每个字段独立成行（各占一个 <p>），不再用竖线拼接"""
@@ -627,13 +627,13 @@ class TestRichContent:
         }])
         # 标题之外，评分/首播/集数/类型/主演/简介 共 6 行
         assert html.count("<p") == 7, html
-        assert "评分：8.6</p>" in html
-        assert "主演：甲、乙</p>" in html
-        assert "简介：简介内容</p>" in html
+        assert "▫️ 评分：" in html and "8.6</strong>" in html
+        assert "▫️ 主演：" in html and "甲、乙</strong>" in html
+        assert "▫️ 简介：简介内容</p>" in html
 
     def test_episodes_without_seasons(self):
         html = self._content([{"rank": 1, "name": "剧A", "number_of_episodes": 12}])
-        assert "集数：共 12 集" in html
+        assert "集数：" in html and "共 12 集" in html
 
     def test_overview_not_truncated(self):
         """简介按用户要求完整显示，不截断"""
@@ -685,7 +685,7 @@ class TestRichContent:
         assert ok is True
         body = json.loads([c for c in _FakeRequestUtils.calls if "message/send" in c[1]][0][2].decode())
         content = body["mpnews"]["articles"][0]["content"]
-        assert "张三" in content and "评分：9.0" in content and "【已订阅】" in content
+        assert "张三" in content and "评分：" in content and "9.0" in content and "【已订阅】" in content
 
 
 class TestBuildNotifyItem:
@@ -1094,7 +1094,7 @@ class TestNotifyItemUsesSeasonData:
             "rank": 1, "name": "问心2", "season": 2,
             "first_air_date": "2026-06-18", "number_of_episodes": 40,
         }])
-        assert "集数：第 2 季 共 40 集" in html
+        assert "集数：" in html and "第 2 季 共 40 集" in html
 
 
 class TestClearCacheCoversSeason:
