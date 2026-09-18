@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import HeatList from './__federation_expose_Page-DsFqMFQq.js';
+import HeatList from './__federation_expose_Page-Dq3SGkOL.js';
 
 true&&(function polyfill() {
   const relList = document.createElement("link").relList;

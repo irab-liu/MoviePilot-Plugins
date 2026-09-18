@@ -11,6 +11,7 @@ import hashlib
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from app.sdk.network import RequestUtils
 from apscheduler.triggers.interval import IntervalTrigger
@@ -256,17 +257,42 @@ class TmdbHelper:
         return None
 
     @staticmethod
+    def image_domain() -> str:
+        """读取宿主配置的 TMDB 图片域名，读取失败回落默认 ``image.tmdb.org``。"""
+        try:
+            from app.runtime.settings import get_runtime_setting
+            domain = get_runtime_setting("TMDB_IMAGE_DOMAIN", "image.tmdb.org")
+            if isinstance(domain, str) and domain.strip():
+                return domain.strip().rstrip("/")
+        except Exception as e:
+            logger.debug("【图片域名】读取宿主 TMDB_IMAGE_DOMAIN 失败: %s", e)
+        return "image.tmdb.org"
+
+    @staticmethod
+    def image_url(poster_path: str, size: str = "w500") -> str:
+        """把 TMDB 海报相对路径拼成宿主图片域名的完整 URL。
+
+        - 已是 http(s) 绝对地址 → 原样返回（不强行改写第三方图床）
+        - 相对路径 → ``https://{宿主图片域名}/t/p/{size}{poster_path}``
+        """
+        if not poster_path:
+            return ""
+        if poster_path.startswith("http"):
+            return poster_path
+        path = poster_path if poster_path.startswith("/") else f"/{poster_path}"
+        return f"https://{TmdbHelper.image_domain()}/t/p/{size}{path}"
+
+    @staticmethod
     def get_poster_url(poster_path: str) -> str:
         """将 TMDB 海报相对路径转换为 MP 代理 URL；空路径返回空字符串。"""
         if not poster_path:
             return ""
         if poster_path.startswith("http"):
-            # TMDB URL → proxy through MP
-            if "image.tmdb.org" in poster_path:
+            # TMDB 图 → 走 MP 代理；非 TMDB 图 → 原样透传
+            if TmdbHelper.image_domain() in poster_path or "image.tmdb.org" in poster_path:
                 return f"/api/v1/system/img/1?imgurl={poster_path}"
-            # Non-TMDB URL → pass through
             return poster_path
-        return f"/api/v1/system/img/1?imgurl=https://image.tmdb.org/t/p/w500{poster_path}"
+        return f"/api/v1/system/img/1?imgurl={TmdbHelper.image_url(poster_path)}"
 
 
 class _WeComMpnews:
@@ -283,8 +309,6 @@ class _WeComMpnews:
     _SEND_PATH = "cgi-bin/message/send?access_token={access_token}"
     # 临时素材有效期 3 天，留出余量按 2 天缓存缩略图 media_id
     _THUMB_TTL = 2 * 86400
-    # 宿主 token 剩余有效期不可知，复用后保守续用 30 分钟
-    _REUSE_TTL = 1800
     # 正文长度保守上限（官方上限未实证，仅作防爆保护）
     _CONTENT_LIMIT = 500000
 
@@ -341,11 +365,11 @@ class _WeComMpnews:
         }
 
         result = self._post_json(self._SEND_PATH, req_json)
-        # token 过期：强制重取后重试一次
-        if result is not None and result.get("errcode") == 42001:
-            logger.warning("【企微图文】access_token 已过期，强制重取后重试")
-            self._access_token = None
-            self._access_token_expire_at = 0.0
+        # token 失效（过期/非法）：清缓存、强制重取后重试一次
+        if result is not None and result.get("errcode") in (42001, 40014):
+            logger.warning("【企微图文】access_token 失效（errcode=%s），强制重取后重试",
+                           result.get("errcode"))
+            self._invalidate_token()
             if not self._fetch_access_token():
                 return False
             result = self._post_json(self._SEND_PATH, req_json)
@@ -503,19 +527,34 @@ class _WeComMpnews:
             return f"{self._proxy.rstrip('/')}/{endpoint.lstrip('/')}"
 
     def _get_access_token(self) -> Optional[str]:
-        """获取 access_token：优先复用宿主已缓存的 token，失败才自行获取。"""
+        """获取 access_token：优先本地缓存，其次复用宿主 token，最后自行获取。
+
+        本地缓存命中以 ``_access_token_expire_at`` 为界；宿主复用则以真实
+        过期时间（含 5 分钟余量）为准，不再盲猜 30 分钟。
+        """
         now = time.time()
         if self._access_token and now < self._access_token_expire_at:
             return self._access_token
-        token = self._host_access_token()
-        if token:
+        host = self._host_access_token()
+        if host:
+            token, expire_at = host
             self._access_token = token
-            self._access_token_expire_at = now + self._REUSE_TTL
+            self._access_token_expire_at = expire_at
             return token
         return self._fetch_access_token()
 
-    def _host_access_token(self) -> Optional[str]:
-        """从宿主运行中的企业微信实例读取已缓存的 access_token。
+    def _invalidate_token(self) -> None:
+        """清空本地 token 缓存，供 42001 响应后强制重取。"""
+        self._access_token = None
+        self._access_token_expire_at = 0.0
+
+    def _host_access_token(self) -> Optional[tuple]:
+        """从宿主运行中的企业微信实例读取已缓存的 access_token 及其真实过期时间。
+
+        返回 ``(token, expire_at)``：``expire_at`` 由宿主维护的
+        ``_access_token_time + _expires_in`` 计算并留出 5 分钟余量。
+        三者缺一即返回 None——宁可不用，也不盲猜剩余有效期（盲猜正是
+        42001 过期误判的根因）。
 
         自行调用 gettoken 会顶掉宿主 token，导致宿主通知间歇性失败，故优先复用。
         """
@@ -526,12 +565,21 @@ class _WeComMpnews:
                 config = getattr(service.config, "config", None) or {}
                 if config.get("WECHAT_CORPID") != self._corpid:
                     continue
-                token = getattr(getattr(service, "instance", None), "_access_token", None)
-                if token:
-                    logger.debug("【企微图文】复用宿主 access_token")
-                    return token
+                instance = getattr(service, "instance", None)
+                token = getattr(instance, "_access_token", None)
+                expires_in = getattr(instance, "_expires_in", None)
+                token_time = getattr(instance, "_access_token_time", None)
+                if not (token and expires_in and token_time):
+                    continue
+                try:
+                    expire_at = token_time.timestamp() + int(expires_in) - 300
+                except (TypeError, ValueError, AttributeError):
+                    continue
+                logger.debug("【企微图文】复用宿主 access_token（余量至 %s）",
+                             datetime.fromtimestamp(expire_at).strftime("%H:%M:%S"))
+                return token, expire_at
         except Exception as e:
-            logger.debug("【企微图文】读取宿主 access_token 失败: %s", e)
+            logger.warning("【企微图文】读取宿主 access_token 失败，改用自行获取: %s", e)
         return None
 
     def _fetch_access_token(self) -> Optional[str]:
@@ -579,6 +627,36 @@ class _WeComMpnews:
         content, filename, mime = self._download_image(image_url)
         if not content:
             return None
+        data = self._upload_thumb_request(filename, content, mime)
+        if data is None:
+            return None
+        if data.get("errcode") != 0:
+            if data.get("errcode") in (42001, 40014):
+                # token 失效：清缓存、强制重取、重试一次
+                logger.warning("【企微图文】缩略图上传 access_token 失效（errcode=%s），重取后重试",
+                               data.get("errcode"))
+                self._invalidate_token()
+                if not self._fetch_access_token():
+                    return None
+                data = self._upload_thumb_request(filename, content, mime)
+                if data is None:
+                    return None
+            if data.get("errcode") != 0:
+                logger.error("【企微图文】上传缩略图素材失败：errcode=%s, errmsg=%s",
+                             data.get("errcode"), data.get("errmsg"))
+                return None
+        media_id = data.get("media_id")
+        if not media_id:
+            return None
+        try:
+            self._owner.save_data(cache_key, {"media_id": media_id, "ts": time.time()})
+        except Exception:
+            pass
+        logger.info("【企微图文】缩略图素材已上传：media_id=%s", media_id)
+        return media_id
+
+    def _upload_thumb_request(self, filename, content, mime) -> Optional[dict]:
+        """单次上传封面素材，返回响应 JSON；网络/HTTP 异常返回 None。"""
         token = self._get_access_token()
         if not token:
             return None
@@ -593,20 +671,7 @@ class _WeComMpnews:
                 logger.error("【企微图文】上传缩略图素材失败：HTTP %s",
                              resp.status_code if resp else None)
                 return None
-            data = resp.json()
-            if data.get("errcode") != 0:
-                logger.error("【企微图文】上传缩略图素材失败：errcode=%s, errmsg=%s",
-                             data.get("errcode"), data.get("errmsg"))
-                return None
-            media_id = data.get("media_id")
-            if not media_id:
-                return None
-            try:
-                self._owner.save_data(cache_key, {"media_id": media_id, "ts": time.time()})
-            except Exception:
-                pass
-            logger.info("【企微图文】缩略图素材已上传：media_id=%s", media_id)
-            return media_id
+            return resp.json()
         except Exception as e:
             logger.error("【企微图文】上传缩略图素材异常: %s", e)
             return None
@@ -627,6 +692,26 @@ class _WeComMpnews:
             logger.debug("【企微图文】读取宿主代理配置失败: %s", e)
         return None
 
+    @classmethod
+    def _host_proxies_for(cls, url: str) -> Optional[dict]:
+        """与宿主图片管道对齐：内网地址不套代理，外网才带代理。"""
+        proxies = cls._host_proxies()
+        if not proxies:
+            return None
+        hostname = urlparse(url).hostname
+        if hostname and cls._is_internal_host(hostname):
+            return None
+        return proxies
+
+    @staticmethod
+    def _is_internal_host(hostname: str) -> bool:
+        """判断主机名是否内网；解析失败按外网处理（不阻断下载）。"""
+        try:
+            from app.sdk.network import IpUtils
+            return bool(IpUtils.is_internal(hostname))
+        except Exception:
+            return False
+
     def _download_image(self, image_url: str):
         """获取封面图片字节，返回 (字节内容, 文件名, MIME)；失败返回 (None, None, None)。
 
@@ -644,7 +729,12 @@ class _WeComMpnews:
         via_host = self._image_from_host_pipeline(image_url)
         if via_host:
             return self._normalize_image(*via_host)
-        return self._normalize_image(*self._download_image_direct(image_url))
+        direct = self._download_image_direct(image_url)
+        if direct[0]:
+            return self._normalize_image(*direct)
+        logger.warning("【企微图文】封面两级取图均失败（宿主管道 + 直连），代理=%s，url=%s",
+                       bool(self._host_proxies()), image_url)
+        return None, None, None
 
     @staticmethod
     def _detect_image_format(content: bytes) -> str:
@@ -716,9 +806,10 @@ class _WeComMpnews:
                 url=image_url, proxy=None, use_cache=True,
             )
         except Exception as e:
-            logger.debug("【企微图文】宿主图片管道不可用，改用直连下载: %s", e)
+            logger.warning("【企微图文】宿主图片管道取图异常，改用直连下载: %s（url=%s）", e, image_url)
             return None
         if not result or not result[0]:
+            logger.warning("【企微图文】宿主图片管道未取到封面（可能下载失败或格式不被接受），改用直连: %s", image_url)
             return None
         content, mime = result
         logger.info("【企微图文】封面取自宿主图片缓存/代理：%d bytes, %s", len(content), mime)
@@ -730,7 +821,7 @@ class _WeComMpnews:
         显式声明 ``Accept: image/jpeg,image/png``，避免拿到 WebP/AVIF
         （企业微信素材只接受 JPG/PNG）。
         """
-        proxies = self._host_proxies()
+        proxies = self._host_proxies_for(image_url)
         try:
             resp = RequestUtils(
                 timeout=30,
@@ -777,9 +868,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.2：新增「使用图文消息推送」开关（企业微信 mpnews，正文含演员/详情/状态）；修复带季数片名（如「问心2」）识别失败，并按季别开播日判定上新。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.3：新增「使用图文消息推送」开关（企业微信 mpnews，正文含演员/详情/状态）；修复带季数片名（如「问心2」）识别失败，并按季别开播日判定上新。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "2.0.2"
+    plugin_version = "2.0.3"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -1848,7 +1939,7 @@ class MaoyanDianYing(_PluginBase):
                         if poster_path.startswith("http"):
                             images.append(poster_path)
                         else:
-                            images.append(f"https://image.tmdb.org/t/p/w500{poster_path}")
+                            images.append(TmdbHelper.image_url(poster_path))
                     if len(lines) >= 8:
                         self.__notify(
                             mtype=mtype,
@@ -1901,7 +1992,7 @@ class MaoyanDianYing(_PluginBase):
                                     if poster_path.startswith("http"):
                                         top1_image = poster_path
                                     else:
-                                        top1_image = f"https://image.tmdb.org/t/p/w500{poster_path}"
+                                        top1_image = TmdbHelper.image_url(poster_path)
                         except Exception:
                             pass
                 self.__notify(
@@ -2309,6 +2400,7 @@ class MaoyanDianYing(_PluginBase):
                 "enabled": False,
                 "data": {"rows": [], "total": 0},
                 "from_cache": False,
+                "image_domain": TmdbHelper.image_domain(),
             }
         cached = super().get_data(self._cache_key)
         if cached and isinstance(cached, dict) and cached.get("rows"):
@@ -2324,9 +2416,11 @@ class MaoyanDianYing(_PluginBase):
                     item.get("tmdbid", 0), item.get("name", ""), item.get("season") or 0
                 )
             logger.info("【获取缓存API】返回缓存数据，共 %d 条", len(cached.get("rows", [])))
-            return {"success": True, "enabled": True, "data": cached, "from_cache": True}
+            return {"success": True, "enabled": True, "data": cached, "from_cache": True,
+                    "image_domain": TmdbHelper.image_domain()}
         logger.info("【获取缓存API】缓存为空")
-        return {"success": True, "enabled": True, "data": {"rows": [], "total": 0}, "from_cache": False}
+        return {"success": True, "enabled": True, "data": {"rows": [], "total": 0},
+                "from_cache": False, "image_domain": TmdbHelper.image_domain()}
 
     def get_season(self, tmdbid: int = None, season: int = None):
         """获取指定季的详情，供详情弹窗按季展示。

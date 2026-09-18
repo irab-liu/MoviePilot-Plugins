@@ -165,6 +165,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const loading = ref(false);
     const fromCache = ref(false);
     const updateTime = ref("");
+    const imageDomain = ref("image.tmdb.org");
     const detailOpen = ref(false);
     const detailLoading = ref(false);
     const detailError = ref("");
@@ -207,7 +208,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function getW500Image(posterPath) {
       if (!posterPath) return "";
-      const base = posterPath.startsWith("http") ? "" : "https://image.tmdb.org/t/p/w500";
+      const base = posterPath.startsWith("http") ? "" : `https://${imageDomain.value}/t/p/w500`;
       return `${base}${posterPath}`;
     }
     function getGenresName(genres) {
@@ -222,6 +223,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           items.value = [];
           fromCache.value = false;
           return "disabled";
+        }
+        if (typeof result?.image_domain === "string" && result.image_domain) {
+          imageDomain.value = result.image_domain;
         }
         const data = result?.data;
         if (data?.rows && Array.isArray(data.rows) && data.rows.length > 0) {
@@ -988,6 +992,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const HeatList = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-18e1dcd2"]]);
+const HeatList = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-de10fe1b"]]);
 
 export { HeatList as default };
