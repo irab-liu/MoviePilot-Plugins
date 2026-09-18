@@ -311,6 +311,12 @@ class _WeComMpnews:
     _THUMB_TTL = 2 * 86400
     # 正文长度保守上限（官方上限未实证，仅作防爆保护）
     _CONTENT_LIMIT = 500000
+    # 需要把「值」加粗 + 上色的字段标签（评分/集数/主演）
+    _EMPHASIS_FIELDS = ("评分", "集数", "主演")
+    # 强调字段值的颜色（用户指定）
+    _EMPHASIS_COLOR = "#915F3C"
+    # 详情行前缀 emoji
+    _DETAIL_PREFIX = "▫️ "
 
     def __init__(self, owner, config: dict):
         """从通知渠道配置中解析企业微信应用凭证。
@@ -434,7 +440,11 @@ class _WeComMpnews:
 
     @classmethod
     def _render_item(cls, item: dict, index: int) -> str:
-        """渲染单个条目区块：标题一行，之后每个字段各占一行。"""
+        """渲染单个条目区块：标题一行，之后每个字段各占一行。
+
+        详情行统一加 ``▫️`` 前缀；评分/集数/主演的「值」加粗并上色，
+        其余字段保持普通灰字。
+        """
         name = cls._escape_html(item.get("name", ""))
         rank = item.get("rank") or index
         platform = cls._escape_html(item.get("platform", ""))
@@ -450,53 +460,74 @@ class _WeComMpnews:
 
         # 每个字段独立一行，便于手机端阅读
         for line in cls._render_detail_lines(item):
-            parts.append(f"<p style=\"color:#555;font-size:13px\">{line}</p>")
+            parts.append(cls._render_detail_line(line))
         return "".join(parts)
 
     @classmethod
-    def _render_detail_lines(cls, item: dict) -> List[str]:
-        """按「标签：值」构造逐行详情：评分 / 首播 / 集数 / 类型 / 主演 / 简介。"""
+    def _render_detail_line(cls, line: tuple) -> str:
+        """把「(标签, 值)」渲染为一行详情 HTML。
+
+        - 强调字段（评分/集数/主演）：``▫️ 标签：<strong color>值</strong>``
+        - 其它字段：``▫️ 标签：值``（灰字）
+        """
+        label, value = line
+        label_html = cls._escape_html(label)
+        value_html = cls._escape_html(value)
+        if label in cls._EMPHASIS_FIELDS:
+            return (
+                f"<p style=\"color:#555;font-size:13px\">{cls._DETAIL_PREFIX}"
+                f"{label_html}：<strong style=\"color:{cls._EMPHASIS_COLOR}\">"
+                f"{value_html}</strong></p>"
+            )
+        return (
+            f"<p style=\"color:#555;font-size:13px\">{cls._DETAIL_PREFIX}"
+            f"{label_html}：{value_html}</p>"
+        )
+
+    @classmethod
+    def _render_detail_lines(cls, item: dict) -> List[tuple]:
+        """按「(标签, 值)」构造逐行详情：评分 / 首播 / 集数 / 类型 / 主演 / 简介。"""
         lines = []
 
         vote = item.get("vote_average")
         try:
             if vote:
-                lines.append(f"评分：{float(vote):.1f}")
+                lines.append(("评分", f"{float(vote):.1f}"))
         except (TypeError, ValueError):
             pass
 
         air_date = item.get("first_air_date")
         if air_date:
-            lines.append(f"首播：{cls._escape_html(air_date)}")
+            lines.append(("首播", str(air_date)))
 
         seasons = item.get("number_of_seasons")
         episodes = item.get("number_of_episodes")
         season = item.get("season") or 0
         if season and episodes:
             # 带季数：只报该季集数，避免显示全季合计造成误导
-            lines.append(f"集数：第 {season} 季 共 {episodes} 集")
+            lines.append(("集数", f"第 {season} 季 共 {episodes} 集"))
         elif seasons and episodes:
-            lines.append(f"集数：{seasons} 季 {episodes} 集")
+            lines.append(("集数", f"{seasons} 季 {episodes} 集"))
         elif episodes:
-            lines.append(f"集数：共 {episodes} 集")
+            lines.append(("集数", f"共 {episodes} 集"))
 
         genres = item.get("genres") or []
         if genres:
             names = [g.get("name") if isinstance(g, dict) else str(g) for g in genres]
             names = [n for n in names if n]
             if names:
-                lines.append(f"类型：{cls._escape_html('、'.join(names))}")
+                lines.append(("类型", "、".join(names)))
 
         actors = item.get("actors") or []
         if actors:
-            actor_text = cls._escape_html("、".join(str(a) for a in actors))
-            lines.append(f"主演：{actor_text}")
+            actor_text = "、".join(str(a) for a in actors)
+            lines.append(("主演", actor_text))
 
         overview = item.get("overview")
         if overview:
             text = str(overview).replace("\n", " ").strip()
             if text:
-                lines.append(f"简介：{cls._escape_html(text)}")
+                lines.append(("简介", text))
 
         return lines
 
@@ -868,9 +899,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.3：新增「使用图文消息推送」开关（企业微信 mpnews，正文含演员/详情/状态）；修复带季数片名（如「问心2」）识别失败，并按季别开播日判定上新。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.4：修改mpnews 正文样式。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "2.0.3"
+    plugin_version = "2.0.4"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
