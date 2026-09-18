@@ -342,6 +342,8 @@ const items = ref<HeatItem[]>([])
 const loading = ref(false)
 const fromCache = ref(false)
 const updateTime = ref('')
+/** 宿主 TMDB 图片域名（由后端 get-cache 下发，替代硬编码 image.tmdb.org） */
+const imageDomain = ref('image.tmdb.org')
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
@@ -406,10 +408,10 @@ function getStatusColor(item: HeatItem): string {
   return '#9E9E9E'
 }
 
-/** 拼接 TMDB 图片 URL */
+/** 拼接 TMDB 图片 URL（域名由后端下发，默认 image.tmdb.org） */
 function getW500Image(posterPath: string): string {
   if (!posterPath) return ''
-  const base = posterPath.startsWith('http') ? '' : 'https://image.tmdb.org/t/p/w500'
+  const base = posterPath.startsWith('http') ? '' : `https://${imageDomain.value}/t/p/w500`
   return `${base}${posterPath}`
 }
 
@@ -430,6 +432,9 @@ async function loadCache() {
       items.value = []
       fromCache.value = false
       return 'disabled'
+    }
+    if (typeof result?.image_domain === 'string' && result.image_domain) {
+      imageDomain.value = result.image_domain
     }
     const data = result?.data
     if (data?.rows && Array.isArray(data.rows) && data.rows.length > 0) {

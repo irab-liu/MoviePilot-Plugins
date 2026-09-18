@@ -6,6 +6,7 @@
 import json
 import sys
 import types
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -286,8 +287,13 @@ class TestTokenAndThumbCache:
     """access_token 优先复用宿主实例；缩略图素材带 TTL 缓存"""
 
     def test_reuses_host_access_token(self):
+        """宿主实例 token 三要素齐全时应复用，不自行 gettoken。"""
         service = types.SimpleNamespace(
-            instance=types.SimpleNamespace(_access_token="HOST_TOKEN"),
+            instance=types.SimpleNamespace(
+                _access_token="HOST_TOKEN",
+                _expires_in=7200,
+                _access_token_time=datetime.now(),
+            ),
             config=types.SimpleNamespace(config=WECOM_CONF),
         )
         helper = MagicMock()
@@ -299,6 +305,22 @@ class TestTokenAndThumbCache:
         urls = [c[1] for c in _FakeRequestUtils.calls]
         assert not any("gettoken" in u for u in urls), urls
         assert any("access_token=HOST_TOKEN" in u for u in urls), urls
+
+    def test_host_token_incomplete_falls_back_to_self_fetch(self):
+        """宿主实例缺少过期时间信息时，按最坏情况设计不复用，改自行 gettoken。"""
+        service = types.SimpleNamespace(
+            instance=types.SimpleNamespace(_access_token="HOST_TOKEN"),
+            config=types.SimpleNamespace(config=WECOM_CONF),
+        )
+        helper = MagicMock()
+        helper.return_value.get_services.return_value = {"wecom": service}
+        with patch("app.sdk.services.NotificationHelper", helper):
+            from app.plugins.maoyandianying import _WeComMpnews
+            sender = _WeComMpnews(MagicMock(), WECOM_CONF)
+            sender._upload_thumb("http://img/x.jpg")
+        urls = [c[1] for c in _FakeRequestUtils.calls]
+        assert any("gettoken" in u for u in urls), urls
+        assert not any("access_token=HOST_TOKEN" in u for u in urls), urls
 
     def test_thumb_media_id_cached(self):
         from app.plugins.maoyandianying import _WeComMpnews
