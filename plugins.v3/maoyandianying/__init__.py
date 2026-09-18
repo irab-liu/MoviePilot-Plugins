@@ -331,8 +331,7 @@ class _WeComMpnews:
                         "thumb_media_id": thumb_media_id,
                         "author": "MoviePilot",
                         "content": self._build_content(text, items),
-                        "digest": self._build_digest(text),
-                        "content_source_url": self._source_url(),
+                        "digest": self._build_digest(text, items),
                     }
                 ]
             },
@@ -378,18 +377,36 @@ class _WeComMpnews:
     def _build_content(cls, text: str, items: Optional[List[dict]] = None) -> str:
         """构造 mpnews 正文 HTML。
 
-        :param text: 纯文本兜底正文（无结构化条目时使用）。
+        :param text: 纯文本正文。有结构化条目时取其首行作为引导语（如 TOP5 提示），
+            避免调用方写在 text 里的说明被丢弃；无条目时整段作为正文。
         :param items: 结构化条目；每条渲染为「标题 + 评分/首播/集数/类型/主演/简介」多行区块。
         """
+        # 引导语：text 里除条目行之外的说明文字（如「今日无新增，为您推荐…」）
+        lead = cls._extract_lead(text) if items else ""
+
         if not items:
             lines = [cls._escape_html(line).strip() for line in (text or "").split("\n")]
             return "<br/>".join(lines).strip()[: cls._CONTENT_LIMIT]
 
         blocks = []
+        if lead:
+            blocks.append(f"<p>{cls._escape_html(lead)}</p>")
         for idx, item in enumerate(items, start=1):
             blocks.append(cls._render_item(item, idx))
         body = "".join(blocks)
         return body.strip()[: cls._CONTENT_LIMIT]
+
+    @staticmethod
+    def _extract_lead(text: str) -> str:
+        """提取正文里的引导语：跳过条目行（以 📺 或序号开头），返回其余首行说明。"""
+        for line in (text or "").split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("📺") or re.match(r"^\d+[.、]", stripped):
+                continue
+            return stripped
+        return ""
 
     @classmethod
     def _render_item(cls, item: dict, index: int) -> str:
@@ -459,22 +476,23 @@ class _WeComMpnews:
 
         return lines
 
-    @staticmethod
-    def _build_digest(text: str) -> str:
-        """摘要：正文压平后截断，作为图文卡片描述。"""
-        return (text or "").replace("\n", " ").strip()[:120]
+    @classmethod
+    def _build_digest(cls, text: str, items: Optional[List[dict]] = None) -> str:
+        """摘要：与正常（非 mpnews）图文消息的正文保持一致。
 
-    @staticmethod
-    def _source_url() -> str:
-        """「阅读原文」链接：优先指向 MoviePilot 插件页，取不到则回退猫眼热度页。"""
-        try:
-            from app.runtime.config import settings
-            url = settings.MP_DOMAIN("#/plugins?tab=installed&id=MaoyanDianYing")
-            if url:
-                return url
-        except Exception:
-            pass
-        return "https://piaofang.maoyan.com/web-heat"
+        企业微信聊天列表展示「封面 + 标题 + 摘要」，用户要求摘要与宿主通知
+        正文完全一致（同样的 📺、序号、平台、订阅状态），因此这里直接沿用
+        ``text``，不做二次加工。
+
+        仅做保守的字节截断：mpnews 的 digest 长度上限未能从官方文档实证，
+        按 500 字节封顶并保证不切断多字节字符，避免整条消息被拒。
+        """
+        digest = (text or "").strip()
+        encoded = digest.encode("utf-8")
+        if len(encoded) <= 500:
+            return digest
+        # 按字节截断到 500 以内，且不切断多字节字符
+        return encoded[:500].decode("utf-8", errors="ignore").strip()
 
     def _url(self, endpoint: str) -> str:
         """按渠道配置的 WECHAT_PROXY 组合出完整接口地址。"""
@@ -618,11 +636,76 @@ class _WeComMpnews:
            海报在前端展示时已由宿主图片代理写入该缓存，命中即零网络请求；
            未命中时由宿主自行按配置的代理下载并回填缓存。
         2. 兜底直连：宿主管道不可用时，自行携带宿主代理下载。
+
+        注意：宿主管道带 ``Accept: image/avif,image/webp,*/*``，TMDB 会按内容协商
+        返回 **WebP**；而企业微信素材只接受 JPG/PNG，直接上传会报 40123
+        （invalid image format）。因此这里统一做一次格式规整。
         """
         via_host = self._image_from_host_pipeline(image_url)
         if via_host:
-            return via_host
-        return self._download_image_direct(image_url)
+            return self._normalize_image(*via_host)
+        return self._normalize_image(*self._download_image_direct(image_url))
+
+    @staticmethod
+    def _detect_image_format(content: bytes) -> str:
+        """按文件头识别真实图片格式。
+
+        返回 'jpeg'/'png'/'webp'/'avif'/'gif'/'bmp'/''。
+
+        注意 AVIF 属 ISO BMFF 容器：``[4:8] == b'ftyp'``，major brand 在 ``[8:12]``。
+        宿主管道的 Accept 头把 ``image/avif`` 排在首位，TMDB 会优先返回 AVIF，
+        必须识别，否则会以错误 MIME 上传被企微拒绝（40123）。
+        """
+        if not content:
+            return ""
+        if content[:3] == b"\xff\xd8\xff":
+            return "jpeg"
+        if content[:8] == b"\x89PNG\r\n\x1a\n":
+            return "png"
+        if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+            return "webp"
+        if content[4:8] == b"ftyp" and content[8:12] in (b"avif", b"avis"):
+            return "avif"
+        if content[:6] in (b"GIF87a", b"GIF89a"):
+            return "gif"
+        if content[:2] == b"BM":
+            return "bmp"
+        return ""
+
+    @classmethod
+    def _normalize_image(cls, content, filename, mime):
+        """把任意图片字节规整为企业微信可接受的 JPG/PNG。
+
+        AVIF/WebP/GIF/BMP 等格式用 Pillow 转成 JPEG（宿主已装 pillow +
+        pillow-avif-plugin，可解 AVIF）；转换不可用时返回 (None, None, None)，
+        宁可放弃本次 mpnews（由调用方回退宿主通知），也不要发错格式被企微拒绝。
+        """
+        if not content:
+            return None, None, None
+        fmt = cls._detect_image_format(content)
+        if fmt in ("jpeg", "png"):
+            # 已是企微可接受格式，按真实格式给出文件名/MIME
+            if fmt == "png":
+                return content, "cover.png", "image/png"
+            return content, "cover.jpg", "image/jpeg"
+        if not fmt:
+            logger.warning("【企微图文】封面格式无法识别（%s bytes），按原样尝试", len(content))
+            return content, filename or "cover.jpg", mime or "image/jpeg"
+        # WebP/GIF/BMP -> JPEG
+        try:
+            import io
+            from PIL import Image
+            with Image.open(io.BytesIO(content)) as img:
+                rgb = img.convert("RGB")
+                buf = io.BytesIO()
+                rgb.save(buf, format="JPEG", quality=90)
+                converted = buf.getvalue()
+            logger.info("【企微图文】封面格式 %s 已转为 JPEG（%d -> %d bytes）",
+                        fmt, len(content), len(converted))
+            return converted, "cover.jpg", "image/jpeg"
+        except Exception as e:
+            logger.warning("【企微图文】封面格式 %s 转换失败: %s", fmt, e)
+            return None, None, None
 
     @staticmethod
     def _image_from_host_pipeline(image_url: str):
@@ -638,16 +721,22 @@ class _WeComMpnews:
         if not result or not result[0]:
             return None
         content, mime = result
-        mime = mime or "image/jpeg"
-        filename = "cover.png" if "png" in mime else "cover.jpg"
         logger.info("【企微图文】封面取自宿主图片缓存/代理：%d bytes, %s", len(content), mime)
-        return content, filename, mime
+        return content, "cover.jpg", mime or "image/jpeg"
 
     def _download_image_direct(self, image_url: str):
-        """兜底：自行携带宿主代理下载封面，返回 (字节, 文件名, MIME)。"""
+        """兜底：自行携带宿主代理下载封面，返回 (字节, 文件名, MIME)。
+
+        显式声明 ``Accept: image/jpeg,image/png``，避免拿到 WebP/AVIF
+        （企业微信素材只接受 JPG/PNG）。
+        """
         proxies = self._host_proxies()
         try:
-            resp = RequestUtils(timeout=30, proxies=proxies).get_res(image_url)
+            resp = RequestUtils(
+                timeout=30,
+                proxies=proxies,
+                headers={"Accept": "image/jpeg,image/png,image/*;q=0.8"},
+            ).get_res(image_url)
             if resp is None or not resp.ok or not resp.content:
                 logger.warning("【企微图文】封面下载失败: %s（代理=%s）",
                                image_url, bool(proxies))
@@ -656,9 +745,13 @@ class _WeComMpnews:
         except Exception as e:
             logger.warning("【企微图文】封面下载异常: %s（代理=%s）", e, bool(proxies))
             return None, None, None
-        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        fmt = self._detect_image_format(content)
+        if fmt == "png":
             return content, "cover.png", "image/png"
-        return content, "cover.jpg", "image/jpeg"
+        if fmt == "jpeg":
+            return content, "cover.jpg", "image/jpeg"
+        # 其它格式交由 _normalize_image 统一转换
+        return content, "cover.bin", "application/octet-stream"
 
     def _post_json(self, path: str, req_json: dict) -> Optional[dict]:
         """携带 access_token 向企业微信 POST JSON，返回解析后的响应体。"""
@@ -684,9 +777,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼热度榜插件主类"""
 
     plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.1：新增「使用图文消息推送」开关（企业微信 mpnews，正文含演员/详情/状态）；修复带季数片名（如「问心2」）识别失败，并按季别开播日判定上新。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.2：新增「使用图文消息推送」开关（企业微信 mpnews，正文含演员/详情/状态）；修复带季数片名（如「问心2」）识别失败，并按季别开播日判定上新。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "2.0.1"
+    plugin_version = "2.0.2"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"

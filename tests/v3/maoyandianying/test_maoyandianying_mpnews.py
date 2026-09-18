@@ -574,7 +574,7 @@ class TestCoverFromHostCache:
 class TestRichContent:
     """mpnews 正文携带演员、详情与订阅状态"""
 
-    def _content(self, items, text="兜底文本"):
+    def _content(self, items, text=""):
         from app.plugins.maoyandianying import _WeComMpnews
         return _WeComMpnews._build_content(text, items)
 
@@ -1327,3 +1327,255 @@ class TestSeasonFromCache:
         with patch.object(type(plugin).__mro__[1], "get_data", return_value={"rows": rows}):
             plugin.get_cache()
         assert plugin._check_media_status.call_args.args[2] == 2
+
+
+# ---------- 消息体结构修正 ----------
+
+class TestNoReadMoreLink:
+    """mpnews 不应带 content_source_url（否则点开跳去 MP 页面）"""
+
+    def test_request_has_no_source_url(self):
+        from app.plugins.maoyandianying import _WeComMpnews
+        sender = _WeComMpnews(MagicMock(get_data=lambda k: None, save_data=MagicMock()), WECOM_CONF)
+        sender.send("标题", "正文", "http://img/x.jpg",
+                    items=[{"rank": 1, "name": "剧A"}])
+        body = json.loads([c for c in _FakeRequestUtils.calls if "message/send" in c[1]][0][2].decode())
+        art = body["mpnews"]["articles"][0]
+        assert "content_source_url" not in art, art
+
+    def test_source_url_helper_removed(self):
+        from app.plugins.maoyandianying import _WeComMpnews
+        assert not hasattr(_WeComMpnews, "_source_url")
+
+
+class TestLeadLineKept:
+    """text 里的引导语必须出现在正文（TOP5 提示曾整条丢失）"""
+
+    def _content(self, text, items):
+        from app.plugins.maoyandianying import _WeComMpnews
+        return _WeComMpnews._build_content(text, items)
+
+    def test_top5_lead_preserved(self):
+        text = "今日无新增默认推送top5，\n📺 1. 《一瓯春》（多平台播放）【未订阅】"
+        items = [{"rank": 1, "name": "一瓯春", "platform": "多平台播放",
+                  "status_tag": "【未订阅】", "first_air_date": "2026-09-17"}]
+        html = self._content(text, items)
+        assert "今日无新增默认推送top5" in html
+        assert "一瓯春" in html
+
+    def test_lead_before_items(self):
+        """引导语应排在条目前面"""
+        html = self._content("引导语\n📺 1. 《剧A》", [{"rank": 1, "name": "剧A"}])
+        assert html.index("引导语") < html.index("剧A")
+
+    def test_no_lead_when_only_items(self):
+        html = self._content("📺 1. 《剧A》【未订阅】", [{"rank": 1, "name": "剧A"}])
+        assert "📺" not in html.split("剧A")[0]
+
+    def test_lead_not_duplicated_by_numbered_line(self):
+        """以序号开头的条目行不应被当成引导语"""
+        html = self._content("1. 《剧A》\n📺 2. 《剧B》", [{"rank": 1, "name": "剧A"}])
+        assert "1. 《剧A》</p>" not in html.split("<strong>")[0]
+
+    def test_plain_text_path_unchanged(self):
+        """无结构化条目时整段原文输出（回退路径不受影响）"""
+        html = self._content("第一行\n第二行", None)
+        assert "第一行" in html and "第二行" in html
+
+
+class TestDigest:
+    """摘要必须与正常（非 mpnews）图文消息正文完全一致"""
+
+    def test_digest_equals_body_text(self):
+        from app.plugins.maoyandianying import _WeComMpnews
+        text = ("今日无新增，为您推荐猫眼热度 TOP5：\n"
+                "📺 1. 《兰香如故》（腾讯视频独播）【已订阅】\n"
+                "📺 2. 《早春晴朗》（优酷独播）【已订阅】")
+        digest = _WeComMpnews._build_digest(text, [{"rank": 1, "name": "兰香如故"}])
+        assert digest == text, digest
+
+    def test_keeps_emoji_and_platform(self):
+        """不能像上一版那样剥掉 📺/序号/平台"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        text = "📺 1. 《兰香如故》（腾讯视频独播）【已订阅】"
+        digest = _WeComMpnews._build_digest(text, [{"rank": 1, "name": "兰香如故"}])
+        assert "📺" in digest
+        assert "（腾讯视频独播）" in digest
+        assert "1." in digest
+
+    def test_keeps_newlines(self):
+        from app.plugins.maoyandianying import _WeComMpnews
+        assert "\n" in _WeComMpnews._build_digest("第一行\n第二行", None)
+
+    def test_truncated_within_byte_limit(self):
+        """超长时按 UTF-8 字节安全截断（mpnews digest 上限 512 字节）"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        long_text = "\n".join(f"📺 {i}. 《很长的剧名》【已订阅】" for i in range(1, 40))
+        digest = _WeComMpnews._build_digest(long_text, None)
+        assert len(digest.encode("utf-8")) <= 500
+        # 不得截出半个多字节字符
+        assert digest == digest.encode("utf-8").decode("utf-8", errors="ignore")
+
+    def test_empty_text(self):
+        from app.plugins.maoyandianying import _WeComMpnews
+        assert _WeComMpnews._build_digest("", None) == ""
+        assert _WeComMpnews._build_digest(None, None) == ""
+
+
+# ---------- 封面格式规整（40123 invalid image format）----------
+
+WEBP_BYTES = b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 24
+JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 24
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+GIF_BYTES = b"GIF89a" + b"\x00" * 24
+
+
+class TestImageFormatDetect:
+    """按文件头识别真实格式（URL 后缀不代表内容）"""
+
+    def _detect(self, data):
+        from app.plugins.maoyandianying import _WeComMpnews
+        return _WeComMpnews._detect_image_format(data)
+
+    def test_detects_jpeg(self):
+        assert self._detect(JPEG_BYTES) == "jpeg"
+
+    def test_detects_png(self):
+        assert self._detect(PNG_BYTES) == "png"
+
+    def test_detects_webp(self):
+        """宿主管道 Accept 带 image/webp，TMDB 会返回 WebP——必须能识别"""
+        assert self._detect(WEBP_BYTES) == "webp"
+
+    def test_detects_gif_and_bmp(self):
+        assert self._detect(GIF_BYTES) == "gif"
+        assert self._detect(b"BM" + b"\x00" * 24) == "bmp"
+
+    def test_unknown_and_empty(self):
+        assert self._detect(b"not an image") == ""
+        assert self._detect(b"") == ""
+
+
+class TestImageNormalize:
+    """企业微信素材只接受 JPG/PNG；WebP/GIF/BMP 需转换"""
+
+    def _norm(self, data, filename="cover.jpg", mime="image/jpeg"):
+        from app.plugins.maoyandianying import _WeComMpnews
+        return _WeComMpnews._normalize_image(data, filename, mime)
+
+    def test_jpeg_passthrough(self):
+        c, f, m = self._norm(JPEG_BYTES)
+        assert c == JPEG_BYTES and f == "cover.jpg" and m == "image/jpeg"
+
+    def test_png_passthrough(self):
+        c, f, m = self._norm(PNG_BYTES, "cover.jpg", "image/jpeg")
+        # 内容实际是 PNG，文件名/MIME 应按真实格式纠正
+        assert c == PNG_BYTES and f == "cover.png" and m == "image/png"
+
+    def test_webp_converted_to_jpeg(self):
+        """核心修复：WebP 必须转成 JPEG，否则企微报 40123"""
+        c, f, m = self._norm(WEBP_BYTES)
+        if c is None:
+            # 无 Pillow 环境下应明确失败，而不是谎报成 JPEG
+            assert c is None and f is None and m is None
+        else:
+            assert c.startswith(b"\xff\xd8\xff"), "转换结果必须是 JPEG"
+            assert f == "cover.jpg" and m == "image/jpeg"
+
+    def test_empty_returns_none(self):
+        assert self._norm(b"") == (None, None, None)
+
+    def test_unknown_format_passthrough(self):
+        c, f, m = self._norm(b"weird bytes", "cover.jpg", "image/jpeg")
+        assert c == b"weird bytes" and f == "cover.jpg"
+
+
+class TestThumbUploadFormat:
+    """上传给企微的素材必须是真实 JPG/PNG"""
+
+    def _sender(self, download_result):
+        """download_result 为 _download_image 的返回值（已规整过的三元组）。"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        sender = _WeComMpnews(MagicMock(get_data=lambda k: None, save_data=MagicMock()), WECOM_CONF)
+        sender._download_image = MagicMock(return_value=download_result)
+        return sender
+
+    def test_download_image_normalizes_host_webp(self):
+        """宿主管道返回 WebP 时，_download_image 必须规整为企微可用格式"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        sender = _WeComMpnews(MagicMock(get_data=lambda k: None, save_data=MagicMock()), WECOM_CONF)
+        sender._image_from_host_pipeline = MagicMock(
+            return_value=(WEBP_BYTES, "cover.jpg", "image/webp"))
+        c, f, m = sender._download_image("http://img/x.jpg")
+        if c is not None:
+            assert c.startswith(b"\xff\xd8\xff"), "WebP 应转为 JPEG"
+            assert m == "image/jpeg"
+
+    def test_normalized_none_aborts_upload(self):
+        """规整失败（None）时不得上传，避免企微 40123"""
+        sender = self._sender((None, None, None))
+        _FakeRequestUtils.reset()
+        assert sender._upload_thumb("http://img/x.jpg") is None
+        assert [c for c in _FakeRequestUtils.calls if "media/upload" in c[1]] == []
+
+    def test_upload_uses_real_format(self):
+        """上传时文件名/MIME 必须与真实内容一致"""
+        sender = self._sender((PNG_BYTES, "cover.png", "image/png"))
+        _FakeRequestUtils.reset()
+        sender._upload_thumb("http://img/x.jpg")
+        uploads = [c for c in _FakeRequestUtils.calls if "media/upload" in c[1]]
+        assert uploads, _FakeRequestUtils.calls
+        files = uploads[0][2]
+        assert files["media"][0] == "cover.png"
+        assert files["media"][2] == "image/png"
+
+    def test_direct_download_sets_accept_header(self):
+        """兜底直连必须声明只接受 jpg/png，避免拿到 WebP"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        seen = {}
+
+        class _Rec(_FakeRequestUtils):
+            def __init__(self, **kw):
+                seen.update(kw)
+
+        sender = _WeComMpnews(MagicMock(get_data=lambda k: None, save_data=MagicMock()), WECOM_CONF)
+        with patch("app.plugins.maoyandianying.RequestUtils", _Rec):
+            sender._download_image_direct("http://img/x.jpg")
+        accept = (seen.get("headers") or {}).get("Accept", "")
+        assert "image/jpeg" in accept or "image/png" in accept, accept
+
+
+AVIF_BYTES = b"\x00\x00\x00\x20ftypavif" + b"\x00" * 20
+AVIS_BYTES = b"\x00\x00\x00\x20ftypavis" + b"\x00" * 20
+
+
+class TestAvifDetection:
+    """宿主管道 Accept 以 image/avif 居首，TMDB 会优先返回 AVIF"""
+
+    def _detect(self, data):
+        from app.plugins.maoyandianying import _WeComMpnews
+        return _WeComMpnews._detect_image_format(data)
+
+    def test_detects_avif(self):
+        assert self._detect(AVIF_BYTES) == "avif"
+
+    def test_detects_avis(self):
+        assert self._detect(AVIS_BYTES) == "avif"
+
+    def test_heic_not_mistaken_for_avif(self):
+        """mif1 是 HEIC，不是 AVIF，不应误判"""
+        assert self._detect(b"\x00\x00\x00\x20ftypmif1" + b"\x00" * 16) == ""
+
+    def test_mp4_not_mistaken_for_avif(self):
+        """isom 是 MP4，不应被当成图片"""
+        assert self._detect(b"\x00\x00\x00\x20ftypisom" + b"\x00" * 16) == ""
+
+    def test_avif_converted_or_rejected(self):
+        """AVIF 必须转成 JPEG；无 Pillow 时明确失败，绝不谎报 MIME"""
+        from app.plugins.maoyandianying import _WeComMpnews
+        c, f, m = _WeComMpnews._normalize_image(AVIF_BYTES, "cover.jpg", "image/jpeg")
+        if c is not None:
+            assert c.startswith(b"\xff\xd8\xff"), "AVIF 应转为 JPEG"
+            assert f == "cover.jpg" and m == "image/jpeg"
+        else:
+            assert (c, f, m) == (None, None, None)
