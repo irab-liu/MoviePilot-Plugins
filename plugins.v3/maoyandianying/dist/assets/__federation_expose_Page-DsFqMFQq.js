@@ -137,6 +137,16 @@ const _hoisted_58 = {
   class: "media-fact"
 };
 const _hoisted_59 = { class: "media-fact-value" };
+const _hoisted_60 = {
+  key: 5,
+  class: "media-fact"
+};
+const _hoisted_61 = { class: "media-fact-value" };
+const _hoisted_62 = {
+  key: 6,
+  class: "media-fact"
+};
+const _hoisted_63 = { class: "media-fact-value" };
 const {ref,onMounted} = await importShared('vue');
 
 const componentTag = "[MaoyanDianYing/Page]";
@@ -272,7 +282,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!props.api) return;
       subscribing.value.add(item.tmdbid);
       try {
-        const result = await props.api.post(url, { tmdbid: item.tmdbid, name: item.name });
+        const result = await props.api.post(url, {
+          tmdbid: item.tmdbid,
+          name: item.name,
+          season: item.season || 0
+        });
         if (result?.success) {
           item.status = "订阅已添加";
           if (selectedItem.value?.tmdbid === item.tmdbid) {
@@ -311,7 +325,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         } else if (result && typeof result === "object") {
           detail.value = result;
         }
-        if (detail.value?.tmdb_id) {
+        const seasonCastReady = item.season ? await applySeasonDetail(item) : false;
+        if (detail.value?.tmdb_id && !seasonCastReady) {
           await fetchCast(detail.value.tmdb_id);
         }
       } catch (error) {
@@ -319,6 +334,28 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       } finally {
         detailLoading.value = false;
       }
+    }
+    async function applySeasonDetail(item) {
+      if (!item.season || !detail.value) return false;
+      try {
+        const url = buildPluginUrl("get-season");
+        const result = await props.api?.get(url, { params: { tmdbid: item.tmdbid, season: item.season } });
+        const seasonData = result?.data;
+        if (!seasonData) return false;
+        if (seasonData.overview) detail.value.overview = seasonData.overview;
+        if (seasonData.air_date) detail.value.first_air_date = seasonData.air_date;
+        if (seasonData.poster_path) detail.value.poster_path = seasonData.poster_path;
+        if (seasonData.vote_average) detail.value.vote_average = seasonData.vote_average;
+        if (seasonData.episode_count) detail.value.number_of_episodes = seasonData.episode_count;
+        detail.value.season_number = seasonData.season_number;
+        if (seasonData.cast?.length) {
+          cast.value = seasonData.cast;
+          return true;
+        }
+      } catch (e) {
+        console.warn(componentTag, "季详情加载失败", e);
+      }
+      return false;
     }
     async function fetchCast(tmdbId) {
       castLoading.value = true;
@@ -706,7 +743,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         _createElementVNode("div", _hoisted_19, [
                           _createElementVNode("h1", _hoisted_20, [
                             _createElementVNode("span", null, _toDisplayString(detail.value.title || selectedItem.value?.name || "未知名称"), 1),
-                            detail.value.year ? (_openBlock(), _createElementBlock("span", _hoisted_21, "（" + _toDisplayString(detail.value.year) + "）", 1)) : _createCommentVNode("", true)
+                            detail.value.year ? (_openBlock(), _createElementBlock("span", _hoisted_21, "（" + _toDisplayString(detail.value.year) + "）", 1)) : _createCommentVNode("", true),
+                            detail.value.season_number ? (_openBlock(), _createBlock(_component_VChip, {
+                              key: 1,
+                              size: "small",
+                              color: "primary",
+                              variant: "tonal",
+                              class: "ms-2"
+                            }, {
+                              default: _withCtx(() => [
+                                _createTextVNode("第 " + _toDisplayString(detail.value.season_number) + " 季", 1)
+                              ]),
+                              _: 1
+                            })) : _createCommentVNode("", true)
                           ]),
                           _createElementVNode("span", _hoisted_22, [
                             detail.value.runtime || detail.value.episode_run_time?.[0] ? (_openBlock(), _createElementBlock("span", _hoisted_23, _toDisplayString(detail.value.runtime || detail.value.episode_run_time?.[0]) + "分钟 ", 1)) : _createCommentVNode("", true),
@@ -899,8 +948,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               _createElementVNode("span", _hoisted_57, _toDisplayString(detail.value.status), 1)
                             ])) : _createCommentVNode("", true),
                             detail.value.release_date || detail.value.first_air_date ? (_openBlock(), _createElementBlock("div", _hoisted_58, [
-                              _cache[30] || (_cache[30] = _createElementVNode("span", null, "发布日期", -1)),
-                              _createElementVNode("span", _hoisted_59, _toDisplayString(detail.value.release_date || detail.value.first_air_date), 1)
+                              _createElementVNode("span", null, _toDisplayString(detail.value.season_number ? "本季首播" : "发布日期"), 1),
+                              _createElementVNode("span", _hoisted_59, _toDisplayString(detail.value.season_number ? detail.value.first_air_date || detail.value.release_date : detail.value.release_date || detail.value.first_air_date), 1)
+                            ])) : _createCommentVNode("", true),
+                            detail.value.season_number && detail.value.number_of_episodes ? (_openBlock(), _createElementBlock("div", _hoisted_60, [
+                              _cache[30] || (_cache[30] = _createElementVNode("span", null, "集数", -1)),
+                              _createElementVNode("span", _hoisted_61, "第 " + _toDisplayString(detail.value.season_number) + " 季 共 " + _toDisplayString(detail.value.number_of_episodes) + " 集", 1)
+                            ])) : detail.value.number_of_episodes ? (_openBlock(), _createElementBlock("div", _hoisted_62, [
+                              _cache[31] || (_cache[31] = _createElementVNode("span", null, "集数", -1)),
+                              _createElementVNode("span", _hoisted_63, _toDisplayString(detail.value.number_of_episodes) + " 集", 1)
                             ])) : _createCommentVNode("", true)
                           ])
                         ])
@@ -932,6 +988,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const HeatList = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-5d98b98b"]]);
+const HeatList = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-18e1dcd2"]]);
 
 export { HeatList as default };
