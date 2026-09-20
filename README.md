@@ -6,11 +6,11 @@
 
 ## 📦 插件列表
 
-### 1. 猫眼热度榜 (MaoyanDianYing)
+### 1. 猫眼发现 (MaoyanDianYing)
 
-**版本**：v2.0.4
+**版本**：v3.0.0
 
-**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.4：修改mpnews 正文样式。
+**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”。
 
 **功能**：
 - 自动抓取猫眼网播热度 TOP30 剧集
@@ -92,6 +92,8 @@
 ## 📋 版本历史
 
 ### MaoyanDianYing
+- v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”
+- v2.1.0：新增 MoviePilotLite 移动端榜单页（Vuetify JSON）
 - v2.0.4：修改mpnews 正文样式
 - v2.0.3：修复图文推送 access_token 过期（42001）不重试导致整条降级的问题——精确复用宿主 token 真实过期时间、上传素材也支持失效重试；图片域名改读宿主 TMDB_IMAGE_DOMAIN；取图失败日志增强便于排查
 - v2.0.2：与 v2.0.1 功能相同——新增「使用图文消息推送」开关（改发企业微信图文消息 mpnews，复用宿主企微应用凭证，正文含评分/首播/集数/类型/主演/简介，推送失败自动回退），修复带季数片名（如「问心2」）识别失败并按该季开播日判定今日上新；因 v2.0.1 已被回退，此版本重新发布
@@ -120,6 +122,8 @@
 
 ## 🔗 下载链接
 
+- [MaoyanDianYing v3.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v3.0.0)
+- [MaoyanDianYing v2.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.1.0)
 - [MaoyanDianYing v2.0.4](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.4)
 - [MaoyanDianYing v2.0.3](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.3)
 - [MaoyanDianYing v2.0.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.2)

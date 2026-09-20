@@ -14,16 +14,18 @@
     }
   },
   "MaoyanDianYing": {
-    "name": "猫眼热度榜",
-    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.4：修改mpnews 正文样式。",
+    "name": "猫眼发现",
+    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”。",
     "labels": "榜单,剧集,猫眼",
-    "version": "2.0.4",
+    "version": "3.0.0",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "v2": false,
     "v3": false,
     "history": {
+      "v3.0.0": "适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”",
+      "v2.1.0": "新增 MoviePilotLite 移动端榜单页（Vuetify JSON）",
       "v2.0.4": "修改mpnews 正文样式",
       "v2.0.0": "支持集成至发现页导航，自适应响应式卡片排版，优化TMDB直接检索，修复宿主报错问题",
       "v1.2.2": "订阅归属用户名改为“猫眼热度”，多用户环境可按用户名区分自动订阅"

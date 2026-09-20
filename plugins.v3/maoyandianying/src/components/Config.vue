@@ -3,7 +3,7 @@
     <!-- 标题栏 -->
     <VCardTitle class="d-flex align-center py-3 px-4">
       <VIcon icon="mdi-trending-up" class="mr-2" color="primary" />
-      <span>猫眼热度榜设置</span>
+      <span>猫眼发现设置</span>
       <VSpacer />
       <VBtn icon="mdi-close" variant="text" size="small" @click="emit('close')" />
     </VCardTitle>
@@ -30,7 +30,7 @@
             color="primary"
             hide-details
             density="compact"
-            messages="开启后猫眼榜单将出现在左侧发现菜单中"
+            messages="开启后猫眼发现将出现在左侧发现菜单中"
           />
         </VCol>
         <VCol cols="12" sm="auto">
@@ -80,6 +80,16 @@
         </VCol>
         <VCol cols="12" sm="6" md="5">
           <VSwitch
+            v-model="form.mpnews_enabled"
+            label="开启详情页"
+            color="primary"
+            hide-details
+            density="compact"
+            messages="推送含评分/首播/集数/类型/主演/简介的详情页图文，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
+          />
+        </VCol>
+        <VCol cols="12" sm="6" md="3">
+          <VSwitch
             v-model="form.run_remind"
             label="立即运行一次提醒"
             color="secondary"
@@ -101,16 +111,6 @@
             density="compact"
             hide-details
             class="maoyan-select"
-          />
-        </VCol>
-        <VCol cols="12" sm="6" md="5">
-          <VSwitch
-            v-model="form.mpnews_enabled"
-            label="使用图文消息推送"
-            color="primary"
-            hide-details
-            density="compact"
-            messages="改用企业微信图文消息(mpnews)发送，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
           />
         </VCol>
       </VRow>
