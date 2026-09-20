@@ -1,5 +1,5 @@
 """
-猫眼热度榜 - MoviePilot V3 插件
+猫眼发现 - MoviePilot V3 插件
 猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。
 """
 
@@ -357,7 +357,7 @@ class _WeComMpnews:
             "mpnews": {
                 "articles": [
                     {
-                        "title": title or "猫眼热度榜",
+                        "title": title or "猫眼发现",
                         "thumb_media_id": thumb_media_id,
                         "author": "MoviePilot",
                         "content": self._build_content(text, items),
@@ -896,12 +896,12 @@ class _WeComMpnews:
 
 class MaoyanDianYing(_PluginBase):
     _render_mode_logged = False
-    """猫眼热度榜插件主类"""
+    """猫眼发现插件主类"""
 
-    plugin_name = "猫眼热度榜"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v2.0.4：修改mpnews 正文样式。"
+    plugin_name = "猫眼发现"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "2.0.4"
+    plugin_version = "3.0.0"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -1261,7 +1261,7 @@ class MaoyanDianYing(_PluginBase):
         return [
             {
                 "id": "MaoyanDianYing.AutoRefresh",
-                "name": "猫眼热度榜自动刷新",
+                "name": "猫眼发现自动刷新",
                 "trigger": IntervalTrigger(hours=self._refresh_interval),
                 "func": self._auto_refresh,
                 "kwargs": {},
@@ -1276,7 +1276,7 @@ class MaoyanDianYing(_PluginBase):
                 "endpoint": self.refresh_tmdb,
                 "methods": ["POST"],
                 "summary": "刷新数据",
-                "description": "重新获取 TMDB 海报和演员数据（不重新抓取猫眼榜单）",
+                "description": "重新获取 TMDB 海报和演员数据（不重新抓取猫眼发现数据）",
                 "auth": "bear",
             },
             {
@@ -1284,7 +1284,7 @@ class MaoyanDianYing(_PluginBase):
                 "endpoint": self.run_once,
                 "methods": ["POST"],
                 "summary": "立即运行1次",
-                "description": "立即执行一次完整抓取（猫眼榜单 + TMDB），返回实时结果并更新缓存",
+                "description": "立即执行一次完整抓取（猫眼发现 + TMDB），返回实时结果并更新缓存",
                 "auth": "bear",
             },
             {
@@ -1300,7 +1300,7 @@ class MaoyanDianYing(_PluginBase):
                 "endpoint": self.get_cache,
                 "methods": ["GET"],
                 "summary": "获取缓存数据",
-                "description": "返回当前缓存的猫眼热度数据，不触发数据抓取",
+                "description": "返回当前缓存的猫眼发现数据，不触发数据抓取",
                 "auth": "bear",
             },
             {
@@ -1570,6 +1570,14 @@ class MaoyanDianYing(_PluginBase):
                                         "component": "VSwitch",
                                         "props": {"model": "reminder_enabled", "label": "开启通知"},
                                     },
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "mpnews_enabled",
+                                            "label": "开启详情页",
+                                            "hint": "推送含评分/首播/集数/类型/主演/简介的详情页图文，复用宿主企业微信应用凭证",
+                                        },
+                                    },
                                 ],
                             },
                         ],
@@ -1597,14 +1605,6 @@ class MaoyanDianYing(_PluginBase):
                                     {
                                         "component": "VSwitch",
                                         "props": {"model": "enable_discovery", "label": "在发现页显示"},
-                                    },
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "mpnews_enabled",
-                                            "label": "使用图文消息推送",
-                                            "hint": "改用企业微信图文消息(mpnews)发送，复用宿主企业微信应用凭证",
-                                        },
                                     },
                                 ],
                             },
@@ -1644,9 +1644,211 @@ class MaoyanDianYing(_PluginBase):
         }
 
     def get_page(self) -> list[dict]:
-        """Vue 远程组件模式下不再使用 Vuetify JSON 渲染。"""
-        logger.info("【数据页面】返回空 JSON，交由远程 Page 组件渲染")
-        return []
+        """返回 MoviePilotLite 移动端的 Vuetify JSON 榜单页。
+
+        MoviePilot Web 端仍走 Vue 远程组件（render_mode=vue，宿主对
+        ``get_page`` 的返回只透传给客户端）；移动端没有联邦运行时，按
+        MoviePilotLite 的 Vuetify 组件子集渲染本 JSON：榜单卡片 + 一键订阅
+        + 手动刷新。详情弹窗等 Web 端交互不在此 JSON 覆盖范围内。
+        """
+        cache = super().get_data(self._cache_key) or {}
+        rows = cache.get("rows") or [] if isinstance(cache, dict) else []
+        update_time = ""
+        if isinstance(cache, dict):
+            update_time = str(cache.get("update_time") or "").strip()
+        for row in rows:
+            if row.get("tmdbid") and not row.get("season"):
+                season = self.__season_from_cache(row.get("name", ""))
+                if season:
+                    row["season"] = season
+
+        # 顶部提示：已启用时显示缓存状态；未启用提示先开启插件
+        if not self.get_state():
+            return [{
+                "component": "VAlert",
+                "props": {
+                    "type": "warning",
+                    "variant": "tonal",
+                    "text": "插件未启用，请在配置页开启后使用。",
+                    "class": "mb-2",
+                },
+            }]
+
+        header_children = [
+            {
+                "component": "VCardTitle",
+                "props": {"class": "text-h6 font-weight-bold"},
+                "text": "猫眼网播热度榜",
+            },
+        ]
+        if update_time:
+            header_children.append({
+                "component": "VCardSubtitle",
+                "props": {"class": "text-caption"},
+                "text": f"更新时间：{update_time}",
+            })
+
+        cards = [
+            {
+                "component": "VCard",
+                "props": {"variant": "elevated", "elevation": 2, "rounded": "lg", "class": "mb-4"},
+                "content": header_children,
+            },
+        ]
+
+        if rows:
+            for item in rows:
+                rank = item.get("rank", 0)
+                name = str(item.get("name", "") or "")
+                platform = str(item.get("platform", "") or "")
+                days = str(item.get("days", "") or "")
+                heat = item.get("heat", 0)
+                plays = str(item.get("plays", "") or "")
+                actors = item.get("actors") or []
+                if isinstance(actors, list):
+                    actors_text = " / ".join(str(a) for a in actors if a)
+                else:
+                    actors_text = str(actors or "")
+                tmdbid = int(item.get("tmdbid", 0) or 0)
+                season = int(item.get("season", 0) or 0)
+                # 状态实时重算：缓存里的 status 字段只有 get_cache 才写回，
+                # _auto_refresh/run_once 均不落盘，订阅/入库后必须实时判定，
+                # 否则订阅后刷新仍显示「未添加订阅」，按钮不变灰。
+                status = self._check_media_status(tmdbid, name, season)
+                # 海报：缓存存的是相对代理 /api/v1/system/img/1?imgurl=...，
+                # 移动端 VuetifyImageView 用 Image.network 无法解析相对路径，
+                # 这里还原成完整图片 URL 供直连加载。
+                poster = str(item.get("poster", "") or "")
+                if "imgurl=" in poster:
+                    poster = poster.split("imgurl=", 1)[1]
+
+                info_children = [
+                    {
+                        "component": "VCardTitle",
+                        "props": {"class": "text-subtitle-1 font-weight-bold"},
+                        "text": f"{rank}. {name}",
+                    },
+                ]
+                if platform:
+                    info_children.append({
+                        "component": "VCardSubtitle",
+                        "props": {"class": "text-caption"},
+                        "text": f"平台：{platform}",
+                    })
+                if days:
+                    info_children.append({
+                        "component": "VCardSubtitle",
+                        "props": {"class": "text-caption"},
+                        "text": f"状态：{days}",
+                    })
+                if heat:
+                    info_children.append({
+                        "component": "VCardSubtitle",
+                        "props": {"class": "text-caption"},
+                        "text": f"热度：{heat}",
+                    })
+                if plays:
+                    info_children.append({
+                        "component": "VCardSubtitle",
+                        "props": {"class": "text-caption"},
+                        "text": f"播放：{plays}",
+                    })
+                if actors_text:
+                    info_children.append({
+                        "component": "VCardSubtitle",
+                        "props": {"class": "text-caption"},
+                        "text": f"主演：{actors_text}",
+                    })
+
+                # 状态直接由下方按钮文字呈现（订阅后变灰显示当前状态），
+                # 不再重复输出状态胶囊。
+                # 订阅按钮：tmdbid>0 且未订阅/未入库时可用，点击走 /subscribe
+                if tmdbid and status == "未添加订阅":
+                    subscribe_btn = {
+                        "component": "VBtn",
+                        "props": {
+                            "color": "primary",
+                            "size": "small",
+                            "class": "mt-3",
+                        },
+                        "text": "订阅",
+                        "events": {
+                            "click": {
+                                "api": f"plugin/MaoyanDianYing/subscribe",
+                                "method": "post",
+                                "params": {
+                                    "tmdbid": tmdbid,
+                                    "name": name,
+                                    "season": season,
+                                },
+                            }
+                        },
+                    }
+                else:
+                    subscribe_btn = {
+                        "component": "VBtn",
+                        "props": {
+                            "color": "grey",
+                            "size": "small",
+                            "class": "mt-3",
+                            "disabled": True,
+                        },
+                        "text": status,
+                    }
+
+                info_children.append(subscribe_btn)
+
+                # 横向卡片：左海报(4列) + 右信息(8列)，与 Web 端左图右文一致，
+                # 避免海报占满整行。VCol 必须显式给 cols，否则 App 端 VCol
+                # 会退化为 Expanded，在 VRow(内部 Wrap) 里导致布局异常。
+                info_col = {
+                    "component": "VCol",
+                    "props": {"cols": 12 if not poster else 8},
+                    "content": [
+                        {
+                            "component": "VCardText",
+                            "content": info_children,
+                        },
+                    ],
+                }
+                row_content = [info_col]
+                if poster:
+                    row_content.insert(0, {
+                        "component": "VCol",
+                        "props": {"cols": 4},
+                        "content": [
+                            {
+                                "component": "VImg",
+                                "props": {
+                                    "src": poster,
+                                    "aspect-ratio": "2/3",
+                                    "cover": True,
+                                },
+                            },
+                        ],
+                    })
+                cards.append({
+                    "component": "VCard",
+                    "props": {"variant": "elevated", "elevation": 2, "rounded": "lg", "class": "mb-4"},
+                    "content": [
+                        {
+                            "component": "VRow",
+                            "content": row_content,
+                        },
+                    ],
+                })
+        else:
+            cards.append({
+                "component": "VAlert",
+                "props": {
+                    "type": "info",
+                    "variant": "tonal",
+                    "text": "暂无榜单数据，点击右上角刷新获取。",
+                    "class": "mb-2",
+                },
+            })
+
+        return cards
 
     def get_sidebar_nav(self) -> list[dict[str, Any]]:
         """返回侧边栏导航配置"""
@@ -1664,7 +1866,7 @@ class MaoyanDianYing(_PluginBase):
         if not enable:
             return [{
                 "nav_key": "main", # 这个不能省略，基座要读
-                "title": "猫眼榜单",
+                "title": "猫眼发现",
                 "icon": "mdi-cat",
                 "order": 1,
             }]
@@ -1672,7 +1874,7 @@ class MaoyanDianYing(_PluginBase):
         return [
             {
                 "nav_key": "main",
-                "title": "猫眼榜单",
+                "title": "猫眼发现",
                 "icon": "mdi-cat",
                 "section": "discovery", 
                 "order": 10,
@@ -1773,16 +1975,22 @@ class MaoyanDianYing(_PluginBase):
                 season=season or None,
                 media_source="themoviedb",
                 media_id=str(tmdbid),
-                username="猫眼热度",
+                username="猫眼发现",
             )
             if sub_id:
                 logger.info("【添加订阅】成功：%s (TMDB ID: %s, 季号: %s, 订阅 ID: %d)",
                             name, tmdbid, season or "无", sub_id)
                 # 清除该剧的状态缓存，避免 loadCache() 命中旧缓存将按钮刷回"未添加订阅"
-                try:
-                    self.del_data(f"maoyandingyue_status_{tmdbid}")
-                except Exception:
-                    pass
+                # 需同时清带季号与不带季号两个键：_save_cached_status 带季号时用
+                # _s{season} 后缀，只删无季号键会导致带季剧集订阅后仍命中旧状态。
+                for _key in (
+                    self._status_cache_key(tmdbid, season),
+                    self._status_cache_key(tmdbid, 0),
+                ):
+                    try:
+                        self.del_data(_key)
+                    except Exception:
+                        pass
                 return {
                     "success": True,
                     "message": f"订阅已添加：{name}" + (f" 第 {season} 季" if season else ""),
@@ -1875,7 +2083,7 @@ class MaoyanDianYing(_PluginBase):
             return {"success": False, "message": str(e)}
 
     def __send_remind(self, force: bool = False, heat_list: Optional[list] = None) -> None:
-        """通知：遍历猫眼热度榜，推送今日上新（first_air_date/release_date == 今天）的剧集。
+        """通知：遍历猫眼发现，推送今日上新（first_air_date/release_date == 今天）的剧集。
 
         - force=False（自动）：随自动刷新触发，仅当“开启通知”开启时执行；
           只推送今天尚未推送过的影片，没有未推送项时静默（不发 TOP5）。
@@ -1974,7 +2182,7 @@ class MaoyanDianYing(_PluginBase):
                     if len(lines) >= 8:
                         self.__notify(
                             mtype=mtype,
-                            title="猫眼热度榜今日上新",
+                            title="猫眼发现今日上新",
                             text="\n".join(lines),
                             image=random.choice(images) if images else None,
                             items=batch,
@@ -1985,7 +2193,7 @@ class MaoyanDianYing(_PluginBase):
                 if lines:
                     self.__notify(
                         mtype=mtype,
-                        title="猫眼热度榜今日上新",
+                        title="猫眼发现今日上新",
                         text="\n".join(lines),
                         image=random.choice(images) if images else None,
                         items=batch,
@@ -1998,7 +2206,7 @@ class MaoyanDianYing(_PluginBase):
                 # 仅手动模式且今日无新增：推送 TOP5 + TOP1 封面
                 top5 = (heat_list or [])[:5]
                 top1_image = None
-                lines = ["今日无新增，为您推荐猫眼热度 TOP5："]
+                lines = ["今日无新增，为您推荐猫眼发现 TOP5："]
                 batch = []
                 for item in top5:
                     rank = item.get("rank", 0)
@@ -2028,7 +2236,7 @@ class MaoyanDianYing(_PluginBase):
                             pass
                 self.__notify(
                     mtype=mtype,
-                    title="猫眼热度榜今日上新",
+                    title="猫眼发现今日上新",
                     text="\n".join(lines),
                     image=top1_image,
                     items=batch,
@@ -2350,7 +2558,7 @@ class MaoyanDianYing(_PluginBase):
             logger.error("【定时刷新】失败: %s", e)
 
     def refresh_tmdb(self):
-        """刷新数据 API：重新获取 TMDB 海报和演员数据（不重新抓取猫眼榜单）。"""
+        """刷新数据 API：重新获取 TMDB 海报和演员数据（不重新抓取猫眼发现数据）。"""
         logger.info("【刷新数据API】收到请求")
         logger.info("【刷新数据】开始重新获取 TMDB 数据...")
         start_time = time.time()

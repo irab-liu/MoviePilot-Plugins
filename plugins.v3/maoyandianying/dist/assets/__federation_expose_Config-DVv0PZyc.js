@@ -261,8 +261,26 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }, {
                     default: _withCtx(() => [
                       _createVNode(_component_VSwitch, {
+                        modelValue: form.mpnews_enabled,
+                        "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.mpnews_enabled = $event),
+                        label: "开启详情页",
+                        color: "primary",
+                        "hide-details": "",
+                        density: "compact",
+                        messages: "推送含评分/首播/集数/类型/主演/简介的详情页图文，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_VCol, {
+                    cols: "12",
+                    sm: "6",
+                    md: "3"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_VSwitch, {
                         modelValue: form.run_remind,
-                        "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => form.run_remind = $event),
+                        "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => form.run_remind = $event),
                         label: "立即运行一次提醒",
                         color: "secondary",
                         "hide-details": "",
@@ -288,31 +306,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     default: _withCtx(() => [
                       _createVNode(_component_VSelect, {
                         modelValue: form.reminder_msgtype,
-                        "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => form.reminder_msgtype = $event),
+                        "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => form.reminder_msgtype = $event),
                         items: msgtypeItems,
                         label: "消息类型",
                         variant: "outlined",
                         density: "compact",
                         "hide-details": "",
                         class: "maoyan-select"
-                      }, null, 8, ["modelValue"])
-                    ]),
-                    _: 1
-                  }),
-                  _createVNode(_component_VCol, {
-                    cols: "12",
-                    sm: "6",
-                    md: "5"
-                  }, {
-                    default: _withCtx(() => [
-                      _createVNode(_component_VSwitch, {
-                        modelValue: form.mpnews_enabled,
-                        "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => form.mpnews_enabled = $event),
-                        label: "使用图文消息推送",
-                        color: "primary",
-                        "hide-details": "",
-                        density: "compact",
-                        messages: "改用企业微信图文消息(mpnews)发送，复用宿主企业微信应用凭证；其他渠道将不再收到该通知"
                       }, null, 8, ["modelValue"])
                     ]),
                     _: 1
@@ -353,6 +353,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-610838cc"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9f9cbc69"]]);
 
 export { Config as default };

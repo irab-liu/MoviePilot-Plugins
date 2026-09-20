@@ -5,7 +5,7 @@
       <VCol cols="12">
         <div class="d-flex align-center mb-4 flex-wrap gap-2">
           <VIcon size="x-small" start>mdi-fire</VIcon>
-          <span class="text-h6 font-weight-bold">猫眼网播热度榜</span>
+          <span class="text-h6 font-weight-bold">猫眼发现</span>
           <VChip size="small" color="error" class="ml-1">TOP30</VChip>
           <VChip v-if="fromCache" size="small" color="success" variant="tonal">缓存</VChip>
           <span v-if="updateTime" class="text-caption text-grey ml-1">{{ updateTime }}</span>
@@ -23,7 +23,7 @@
     <VRow v-if="loading && items.length === 0">
       <VCol cols="12" class="text-center py-8">
         <VProgressCircular indeterminate color="primary" />
-        <div class="text-caption text-grey mt-2">正在抓取猫眼热度数据...</div>
+        <div class="text-caption text-grey mt-2">正在抓取猫眼发现数据...</div>
       </VCol>
     </VRow>
 
