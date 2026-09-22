@@ -8,9 +8,9 @@
 
 ### 1. 猫眼发现 (MaoyanDianYing)
 
-**版本**：v3.0.0
+**版本**：v3.0.1
 
-**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”。
+**描述**：猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.1：修复已知问题。
 
 **功能**：
 - 自动抓取猫眼网播热度 TOP30 剧集
@@ -92,6 +92,7 @@
 ## 📋 版本历史
 
 ### MaoyanDianYing
+- v3.0.1：修复已知问题
 - v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”
 - v2.1.0：新增 MoviePilotLite 移动端榜单页（Vuetify JSON）
 - v2.0.4：修改mpnews 正文样式
@@ -122,6 +123,7 @@
 
 ## 🔗 下载链接
 
+- [MaoyanDianYing v3.0.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v3.0.1)
 - [MaoyanDianYing v3.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v3.0.0)
 - [MaoyanDianYing v2.1.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.1.0)
 - [MaoyanDianYing v2.0.4](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.4)

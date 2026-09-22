@@ -899,9 +899,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.0：适配 MoviePilotLite 移动端，原“猫眼热度榜”插件正式更名“猫眼发现”。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.1：修复已知问题。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -956,6 +956,14 @@ class MaoyanDianYing(_PluginBase):
                 ).start()
             else:
                 logger.info("【启用后抓取】发现已有缓存，共 %d 条，不重复抓取", len(cached.get("rows", [])))
+            # 重启后 10 分钟补刷一次，缓解"重启导致 6 小时计时归零"的等待；
+            # 复用 _auto_refresh 的既有规则：有今日上新才发提醒，无上新则静默。
+            threading.Timer(
+                600,
+                self._auto_refresh,
+                kwargs={"notify": True},
+            ).start()
+            logger.info("【重启补刷】已安排 10 分钟后执行一次自动刷新")
 
     def __start_warmup(self):
         """启动 daemon 线程执行预热，避免阻塞插件加载"""
