@@ -229,7 +229,7 @@ class TestTmdbHelper:
         from app.plugins.maoyandianying import MaoyanDianYing
         plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.details.return_value = {
+        mock_api.get_info.return_value = {
             "credits": {"cast": [{"name": "演员1"}, {"name": "演员2"}, {"name": "演员3"}]}
         }
         mock_tmdb_cls.return_value = mock_api
@@ -246,7 +246,7 @@ class TestTmdbHelper:
         from app.plugins.maoyandianying import MaoyanDianYing
         plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.details.return_value = {
+        mock_api.get_info.return_value = {
             "credits": {"cast": [{"name": "ABCDEF"}, {"name": "GHIJKL"}, {"name": "MN"}]}
         }
         mock_tmdb_cls.return_value = mock_api
@@ -533,7 +533,7 @@ class TestGetCast:
     def test_get_cast_success(self, mock_tmdb_cls):
         plugin = _make_plugin()
         mock_api = MagicMock()
-        mock_api.tv.details.return_value = {
+        mock_api.get_info.return_value = {
             "credits": {"cast": [{"name": "演员1"}, {"name": "演员2"}]}
         }
         mock_tmdb_cls.return_value = mock_api

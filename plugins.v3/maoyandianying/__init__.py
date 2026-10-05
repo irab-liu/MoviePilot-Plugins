@@ -899,9 +899,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.1：修复已知问题。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.2：更新tmdbapi，提高识别率。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.1"
+    plugin_version = "3.0.2"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -1047,14 +1047,17 @@ class MaoyanDianYing(_PluginBase):
             result["media_type"] = result["media_type"].value
         return result
 
-    def __get_cached_tmdb(self, title: str) -> Optional[dict]:
-        """从二级缓存读取 TMDB 数据（7 天 TTL；旧版无 ts 字段的数据视为过期，避免永久积累）"""
+    def __get_cached_tmdb(self, title: str, allow_expired: bool = False) -> Optional[dict]:
+        """从二级缓存读取 TMDB 数据（7 天 TTL；旧版无 ts 字段的数据视为过期，避免永久积累）。
+
+        :param allow_expired: 为 True 时忽略 TTL 返回过期缓存，供网络故障兜底使用。
+        """
         cache_key = self.__tmdb_cache_key(title)
         try:
             cached = self.get_data(cache_key)
             if cached and isinstance(cached, dict):
                 ts = cached.get("ts")
-                if ts is not None and time.time() - ts < self._tmdb_cache_ttl:
+                if allow_expired or (ts is not None and time.time() - ts < self._tmdb_cache_ttl):
                     return cached
         except Exception:
             pass
@@ -1070,6 +1073,31 @@ class MaoyanDianYing(_PluginBase):
             self.save_data(cache_key, data)
         except Exception:
             pass
+
+    def __resolve_poster_path(self, tmdbid, poster_path: str = "", backdrop_path: str = "") -> str:
+        """海报三级兜底：poster_path → backdrop_path → get_tv_images 的首张海报/背景图。
+
+        TMDB 部分剧（尤其新剧）只有 backdrop_path 而没有竖版 poster_path，直接按
+        poster 取图会得到空值导致前端无图。这里在 poster 缺失时逐级回退，保证有图可显。
+        """
+        if poster_path:
+            return poster_path
+        if backdrop_path:
+            return backdrop_path
+        if not tmdbid:
+            return ""
+        try:
+            api = TmdbApi(language="zh")
+            images = api.get_tv_images(tmdbid) or {}
+            for key in ("posters", "backdrops"):
+                items = images.get(key) or []
+                for it in items:
+                    file_path = (it or {}).get("file_path")
+                    if file_path:
+                        return file_path
+        except Exception as e:
+            logger.debug("【海报兜底】tmdbid=%s 获取图片失败: %s", tmdbid, e)
+        return ""
 
     def __search_tmdb_with_cache(self, title: str) -> Optional[dict]:
         """带二级缓存的 TMDB 搜索（优先直接使用 TmdbHelper 查询官方 TMDB）"""
@@ -1092,17 +1120,33 @@ class MaoyanDianYing(_PluginBase):
                     cached["first_air_date"] = cached.get("first_air_date") or detail.get("first_air_date")
                     cached["name"] = detail.get("name") or cached.get("name") or title
                     self.__save_cached_tmdb(title, cached)
+            # 海报兜底：poster 为空时用 backdrop / images 首图补齐
+            if cached.get("id") and not cached.get("poster_path"):
+                resolved = self.__resolve_poster_path(
+                    cached.get("id"),
+                    cached.get("poster_path") or "",
+                    cached.get("backdrop_path") or "",
+                )
+                if resolved:
+                    cached["poster_path"] = resolved
+                    self.__save_cached_tmdb(title, cached)
+                    logger.info("【海报兜底】'%s' 用兜底图：%s", title, resolved)
             return cached
         try:
             tv = TmdbHelper.search_tv(title)
             if tv and tv.get("id"):
                 tmdb_id = tv["id"]
                 detail = self.__get_detail_with_cache(tmdb_id)
+                poster_path = (detail or {}).get("poster_path") or tv.get("poster_path") or ""
+                backdrop_path = (detail or {}).get("backdrop_path") or tv.get("backdrop_path") or ""
+                # 海报三级兜底：poster 缺失时用 backdrop / images 首图
+                if not poster_path:
+                    poster_path = self.__resolve_poster_path(tmdb_id, poster_path, backdrop_path)
                 result = {
                     "id": tmdb_id,
                     "name": (detail or {}).get("name") or tv.get("name") or title,
-                    "poster_path": (detail or {}).get("poster_path") or tv.get("poster_path"),
-                    "backdrop_path": (detail or {}).get("backdrop_path") or tv.get("backdrop_path"),
+                    "poster_path": poster_path,
+                    "backdrop_path": backdrop_path,
                     "first_air_date": (detail or {}).get("first_air_date") or tv.get("first_air_date"),
                     "media_type": "TV",
                 }
@@ -1115,6 +1159,11 @@ class MaoyanDianYing(_PluginBase):
                 return result
         except Exception as e:
             logger.warning("【TMDB搜索】'%s' 失败: %s", title, e)
+            # 网络/异常故障：回退过期缓存，避免瞬时失败丢失已有识别结果与海报
+            stale = self.__get_cached_tmdb(title, allow_expired=True)
+            if stale:
+                logger.warning("【TMDB搜索】'%s' 失败，回退过期缓存", title)
+                return stale
         return None
 
     @staticmethod
@@ -1172,15 +1221,18 @@ class MaoyanDianYing(_PluginBase):
         except Exception:
             pass
 
-    def __get_cached_detail(self, tmdbid: int) -> Optional[dict]:
-        """读取 TV 详情缓存（含 cast + first_air_date，7天 TTL）"""
+    def __get_cached_detail(self, tmdbid: int, allow_expired: bool = False) -> Optional[dict]:
+        """读取 TV 详情缓存（含 cast + first_air_date，7天 TTL）。
+
+        :param allow_expired: 为 True 时忽略 TTL 返回过期缓存，供网络故障兜底使用。
+        """
         if not tmdbid:
             return None
         cache_key = f"maoyandingyue_detail_{tmdbid}"
         try:
             cached = self.get_data(cache_key)
             if cached and isinstance(cached, dict):
-                if time.time() - cached.get("ts", 0) < self._detail_cache_ttl:
+                if allow_expired or time.time() - cached.get("ts", 0) < self._detail_cache_ttl:
                     return cached.get("data")
         except Exception:
             pass
@@ -1200,27 +1252,57 @@ class MaoyanDianYing(_PluginBase):
         """读取 TV 详情（含 poster_path/first_air_date/credits），走 7 天缓存；失败返回 None。
 
         海报、首播日期、演员统一从这里取，不再依赖 recognize_media 的顺带字段。
+        通过宿主 ``TmdbApi.get_info`` 一次请求拿全 images/credits/alternative_titles/
+        translations 等字段，并区分网络故障与业务 404：
+
+        - 网络故障（TMDbConnectionError）：保留过期缓存兜底，不重置海报；
+        - 404（返回 None）：确实无此数据，写 poster_checked 终态标记，避免循环重查；
+        - 无海报但有 backdrop/images：在读取侧按需兜底。
         """
         if not tmdbid:
             return None
         try:
+            # 命中并校验缓存；缺海报/首播日期且未标记终态时判脏重查
             detail = self.__get_cached_detail(tmdbid)
-            if detail and (not detail.get("poster_path") or not detail.get("first_air_date")):
-                # 脏缓存（曾写入缺字段数据），丢弃并重新查询 TMDB
+            if detail and not detail.get("_poster_checked") and (
+                not detail.get("poster_path") or not detail.get("first_air_date")
+            ):
                 logger.warning("【详情缓存】tmdbid=%s 命中脏缓存（缺海报/首播日期），重新查询 TMDB", tmdbid)
                 detail = None
             if not detail:
+                try:
+                    from app.modules.themoviedb.tmdbv3api.exceptions import TMDbConnectionError
+                except Exception:
+                    TMDbConnectionError = None  # type: ignore[assignment]
                 api = TmdbApi(language="zh")
-                detail = api.tv.details(tmdbid)
+                try:
+                    info = api.get_info(MediaType.TV, int(tmdbid), raise_on_connection_error=True)
+                except TMDbConnectionError:
+                    # 网络故障：用过期缓存兜底，避免瞬时断网丢失海报
+                    stale = self.__get_cached_detail(tmdbid, allow_expired=True)
+                    logger.warning("【详情缓存】tmdbid=%s 网络故障，回退过期缓存（%s）",
+                                   tmdbid, "命中" if stale else "无缓存")
+                    return stale
+                except Exception as e:
+                    logger.warning("【详情缓存】获取 tmdbid=%s 详情失败: %s", tmdbid, e)
+                    stale = self.__get_cached_detail(tmdbid, allow_expired=True)
+                    return stale
+                detail = info
                 if detail:
+                    # 请求成功：明确无海报/首播日期时打终态标记，避免下次再判脏重查
+                    if not detail.get("poster_path") or not detail.get("first_air_date"):
+                        detail = dict(detail)
+                        detail["_poster_checked"] = True
                     self.__save_cached_detail(tmdbid, detail)
-            if detail and (not detail.get("poster_path") or not detail.get("first_air_date")):
+            if detail and not detail.get("_poster_checked") and (
+                not detail.get("poster_path") or not detail.get("first_air_date")
+            ):
                 logger.warning("【详情缓存】tmdbid=%s 重新查询后仍缺字段：poster=%r first_air_date=%r",
                                tmdbid, detail.get("poster_path"), detail.get("first_air_date"))
             return detail
         except Exception as e:
             logger.warning("【详情缓存】获取 tmdbid=%s 详情失败: %s", tmdbid, e)
-            return None
+            return self.__get_cached_detail(tmdbid, allow_expired=True)
 
     def get_tv_credits(self, tmdbid: int) -> List[str]:
         """获取前五位演员（使用 detail 缓存，一次请求获取 cast+first_air_date）。"""
@@ -2422,7 +2504,7 @@ class MaoyanDianYing(_PluginBase):
                 return None
         try:
             api = TmdbApi(language="zh")
-            season_detail = api.season_obj.details(tv_id=tmdbid, season_num=season)
+            season_detail = api.get_tv_season_detail(tmdbid=tmdbid, season=season)
             if not season_detail:
                 return None
             # 季级 air_date 偶尔为空，回退到该季第 1 集
@@ -2480,12 +2562,7 @@ class MaoyanDianYing(_PluginBase):
 
             air_date = tmdb_info.get("first_air_date") or ""
             if not air_date and tmdbid:
-                detail = self.__get_cached_detail(tmdbid)
-                if not detail:
-                    api = TmdbApi(language="zh")
-                    detail = api.tv.details(tmdbid)
-                    if detail:
-                        self.__save_cached_detail(tmdbid, detail)
+                detail = self.__get_detail_with_cache(tmdbid)
                 if detail:
                     air_date = detail.get("first_air_date") or ""
             if not air_date:
@@ -2531,6 +2608,12 @@ class MaoyanDianYing(_PluginBase):
                     season = existing[name].get("season") or self.__season_from_cache(name)
                     if season:
                         item["season"] = season
+                    # 海报兜底：老缓存里 poster 可能为空（TMDB 无竖版海报），
+                    # 走二级缓存三级兜底补一张图，避免"已识别但永远无图"。
+                    if not item.get("poster"):
+                        tmdb_info = self.__search_tmdb_with_cache(name)
+                        if tmdb_info and tmdb_info.get("poster_path"):
+                            item["poster"] = TmdbHelper.get_poster_url(tmdb_info["poster_path"])
                 else:
                     # 新条目才获取 TMDB（带二级缓存）
                     tmdb_info = self.__search_tmdb_with_cache(name)
@@ -2712,12 +2795,7 @@ class MaoyanDianYing(_PluginBase):
         if not tmdbid:
             return {"success": False, "message": "缺少 tmdbid 参数", "data": None}
         try:
-            detail = self.__get_cached_detail(tmdbid)
-            if not detail:
-                api = TmdbApi(language="zh")
-                detail = api.tv.details(tmdbid)
-                if detail:
-                    self.__save_cached_detail(tmdbid, detail)
+            detail = self.__get_detail_with_cache(int(tmdbid))
             if not detail:
                 return {"success": False, "message": "获取详情失败", "data": None}
             cast = detail.get("credits", {}).get("cast", [])[:20]

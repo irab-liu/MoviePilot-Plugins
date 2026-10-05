@@ -949,17 +949,17 @@ class TestGetSeasonAirDate:
     def test_reads_season_air_date(self, mock_cls):
         from app.plugins.maoyandianying import MaoyanDianYing
         api = MagicMock()
-        api.season_obj.details.return_value = {"air_date": "2026-06-18", "episodes": []}
+        api.get_tv_season_detail.return_value = {"air_date": "2026-06-18", "episodes": []}
         mock_cls.return_value = api
         plugin = self._plugin(seasons=(1, 2))
         assert plugin._MaoyanDianYing__get_season_air_date(233076, 2) == "2026-06-18"
-        api.season_obj.details.assert_called_once_with(tv_id=233076, season_num=2)
+        api.get_tv_season_detail.assert_called_once_with(tmdbid=233076, season=2)
 
     @patch("app.plugins.maoyandianying.TmdbApi")
     def test_falls_back_to_first_episode(self, mock_cls):
         from app.plugins.maoyandianying import MaoyanDianYing
         api = MagicMock()
-        api.season_obj.details.return_value = {
+        api.get_tv_season_detail.return_value = {
             "air_date": "", "episodes": [{"air_date": "2026-06-18"}]}
         mock_cls.return_value = api
         plugin = self._plugin(seasons=(1, 2))
@@ -977,7 +977,7 @@ class TestGetSeasonAirDate:
         """detail 无 seasons 字段时不做校验，照常查询"""
         from app.plugins.maoyandianying import MaoyanDianYing
         api = MagicMock()
-        api.season_obj.details.return_value = {"air_date": "2026-06-18", "episodes": []}
+        api.get_tv_season_detail.return_value = {"air_date": "2026-06-18", "episodes": []}
         mock_cls.return_value = api
         plugin = _make_plugin(mpnews=False)
         plugin.get_data = MagicMock(return_value=None)
@@ -1019,7 +1019,7 @@ class TestGetSeasonDetail:
     @patch("app.plugins.maoyandianying.TmdbApi")
     def test_returns_season_detail(self, mock_cls):
         api = MagicMock()
-        api.season_obj.details.return_value = {
+        api.get_tv_season_detail.return_value = {
             "air_date": "2026-06-18", "overview": "第2季简介", "name": "第 2 季",
             "episodes": [{"air_date": "2026-06-18"}] * 40,
         }
