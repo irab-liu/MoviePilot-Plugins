@@ -29,16 +29,16 @@
   },
   "MaoyanTop30": {
     "name": "猫眼TOP30探索",
-    "description": "猫眼TOP30探索：电影实时票房/综艺/电视剧+网络剧榜单，TMDB+豆瓣识别，题材筛选",
+    "description": "猫眼TOP30探索：猫眼电影、综艺接口异常暂无法获取数据",
     "labels": "榜单,电影,综艺,剧集,猫眼",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v2.1.1": "探索页新增状态提示行（缓存数据/缓存过期+缓存时间+接口说明）；榜单抓取与识别解耦（定时预热只读缓存不抓榜单）；命中缓存滑动续期（7天限频、30天未访问才过期）；日志精简（去接口URL、统一抓取文案）"
+      "v2.1.2": "猫眼电影、综艺接口异常暂无法获取数据"
     }
   },
   "ugnasfeedback": {

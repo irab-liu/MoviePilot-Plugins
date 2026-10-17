@@ -160,9 +160,9 @@ class MaoyanTop30(_PluginBase):
 
     # 插件元数据
     plugin_name = "猫眼TOP30探索"
-    plugin_desc = "让探索支持猫眼电视剧-top30，思路来源于DDSRem大佬的项目实现。"
+    plugin_desc = "猫眼TOP30探索：猫眼电影、综艺接口异常暂无法获取数据"
     plugin_icon = "maoyantop30_A.png"
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyantop30_"
