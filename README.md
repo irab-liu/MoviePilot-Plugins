@@ -32,9 +32,9 @@
 
 ### 2. 猫眼TOP30探索 (MaoyanTop30)
 
-**版本**：v1.1.1
+**版本**：v2.1.2
 
-**描述**：让探索支持猫眼电视剧-top30，思路来源于 DDSRem 大佬的项目实现。
+**描述**：猫眼TOP30探索：猫眼电影、综艺接口异常暂无法获取数据
 
 **功能**：
 - 将猫眼网播热度榜作为探索数据源
@@ -111,6 +111,7 @@
 - v1.0.0：首次发布
 
 ### MaoyanTop30
+- v2.1.2：猫眼电影、综艺接口异常暂无法获取数据
 - v1.1.1：增加定时自动刷新功能，可配置刷新间隔
 - v1.0.0：首次发布
 
@@ -134,6 +135,8 @@
 - [MaoyanDianYing v2.0.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.1)
 - [MaoyanDianYing v2.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.0)
 - [MaoyanDianYing v1.2.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.2)
+- [MaoyanTop30 v2.1.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.2)
+- [MaoyanTop30 v2.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.1)
 - [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
 - [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
