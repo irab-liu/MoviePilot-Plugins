@@ -29,16 +29,16 @@
   },
   "MaoyanTop30": {
     "name": "猫眼TOP30探索",
-    "description": "猫眼TOP30探索：猫眼电影、综艺接口异常暂无法获取数据",
+    "description": "猫眼TOP30探索：猫眼综艺接口异常暂无法获取数据，电视剧电影不受影响，综艺恢复要等猫眼接口修复。",
     "labels": "榜单,电影,综艺,剧集,猫眼",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "icon": "maoyantop30_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v2.1.2": "猫眼电影、综艺接口异常暂无法获取数据"
+      "v2.1.3": "猫眼综艺接口异常暂无法获取数据，电视剧电影不受影响，综艺恢复要等猫眼接口修复。"
     }
   },
   "ugnasfeedback": {
