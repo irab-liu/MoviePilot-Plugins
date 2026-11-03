@@ -32,9 +32,9 @@
 
 ### 2. 猫眼TOP30探索 (MaoyanTop30)
 
-**版本**：v2.1.2
+**版本**：v2.1.3
 
-**描述**：猫眼TOP30探索：猫眼电影、综艺接口异常暂无法获取数据
+**描述**：猫眼TOP30探索：猫眼综艺接口异常暂无法获取数据，电视剧电影不受影响，综艺恢复要等猫眼接口修复。
 
 **功能**：
 - 将猫眼网播热度榜作为探索数据源
@@ -111,6 +111,7 @@
 - v1.0.0：首次发布
 
 ### MaoyanTop30
+- v2.1.3：猫眼综艺接口异常暂无法获取数据，电视剧电影不受影响，综艺恢复要等猫眼接口修复。
 - v2.1.2：猫眼电影、综艺接口异常暂无法获取数据
 - v1.1.1：增加定时自动刷新功能，可配置刷新间隔
 - v1.0.0：首次发布
@@ -135,6 +136,7 @@
 - [MaoyanDianYing v2.0.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.1)
 - [MaoyanDianYing v2.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v2.0.0)
 - [MaoyanDianYing v1.2.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanDianYing_v1.2.2)
+- [MaoyanTop30 v2.1.3](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.3)
 - [MaoyanTop30 v2.1.2](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.2)
 - [MaoyanTop30 v2.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v2.1.1)
 - [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
