@@ -216,8 +216,30 @@ class TmdbHelper:
         return total
 
     @staticmethod
+    @staticmethod
+    def _normalize_title(name: str) -> str:
+        """归一化片名用于精确匹配：去首尾空白、转小写、去标点与空白。"""
+        return re.sub(r"[\s\W_]+", "", (name or "").lower())
+
+    @classmethod
+    def _pick_best_match(cls, name: str, results: list) -> Optional[Dict[str, Any]]:
+        """在已通过子串过滤的候选里优先选精确同名，没有则回退第一条。
+
+        宿主 ``search_tvs`` 已保证候选 ``name`` 均包含输入标题（子串过滤），
+        但排序由 TMDB 相关性决定，可能把「美少女人鱼」排在「人鱼」前面。
+        这里只对 ``name`` 做归一化后的精确比较，不改动模糊兜底行为。
+        """
+        if not results:
+            return None
+        normalized = cls._normalize_title(name)
+        if normalized:
+            for item in results:
+                if cls._normalize_title(item.get("name") or "") == normalized:
+                    return item
+        return results[0]
+
     def search_tv(name: str) -> Optional[Dict[str, Any]]:
-        """按剧名搜索 TMDB，返回首条匹配结果；失败或无结果时返回 ``None``。
+        """按剧名搜索 TMDB，优先返回片名精确匹配的结果；失败或无结果时返回 ``None``。
 
         原名搜不到时，剥离季数后缀重搜一次（如「问心2」-> 「问心」），
         命中后回填 ``season`` 字段，供季别开播日期判定使用。
@@ -230,9 +252,11 @@ class TmdbHelper:
 
         try:
             result = api.search_tvs(name, "")
-            if result and len(result) > 0:
-                logger.debug("TMDB搜索 '%s' → ID %s", name, result[0].get("id"))
-                return result[0]
+            if result:
+                hit = TmdbHelper._pick_best_match(name, result)
+                if hit:
+                    logger.debug("TMDB搜索 '%s' → ID %s", name, hit.get("id"))
+                    return hit
         except Exception as e:
             logger.error("TMDB搜索 '%s' 失败: %s", name, e)
             return None
@@ -243,12 +267,14 @@ class TmdbHelper:
             try:
                 logger.info("TMDB搜索 '%s' 无结果，改以主标题 '%s' 重试（季号=%s）", name, base, season)
                 result = api.search_tvs(base, "")
-                if result and len(result) > 0:
-                    hit = dict(result[0])
-                    hit["_season"] = season
-                    logger.info("TMDB搜索 '%s' → 主标题 '%s' 命中 ID %s",
-                                name, base, hit.get("id"))
-                    return hit
+                if result:
+                    hit = TmdbHelper._pick_best_match(base, result)
+                    if hit:
+                        hit = dict(hit)
+                        hit["_season"] = season
+                        logger.info("TMDB搜索 '%s' → 主标题 '%s' 命中 ID %s",
+                                    name, base, hit.get("id"))
+                        return hit
             except Exception as e:
                 logger.error("TMDB搜索 '%s'（主标题 '%s'）失败: %s", name, base, e)
                 return None
@@ -899,9 +925,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.2：更新tmdbapi，提高识别率。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.4：详情页改为宿主弹窗，适配 MoviePilot-App 原生关闭与侧滑返回。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.2"
+    plugin_version = "3.0.4"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"

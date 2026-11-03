@@ -118,7 +118,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "mr-2",
                 color: "primary"
               }),
-              _cache[8] || (_cache[8] = _createElementVNode("span", null, "猫眼热度榜设置", -1)),
+              _cache[8] || (_cache[8] = _createElementVNode("span", null, "猫眼发现设置", -1)),
               _createVNode(_component_VSpacer),
               _createVNode(_component_VBtn, {
                 icon: "mdi-close",
@@ -165,7 +165,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         color: "primary",
                         "hide-details": "",
                         density: "compact",
-                        messages: "开启后猫眼榜单将出现在左侧发现菜单中"
+                        messages: "开启后猫眼发现将出现在左侧发现菜单中"
                       }, null, 8, ["modelValue"])
                     ]),
                     _: 1
@@ -353,6 +353,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9f9cbc69"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-012c69b8"]]);
 
 export { Config as default };

@@ -110,193 +110,23 @@
       </div>
     </div>
 
-    <!-- 媒体详情弹窗 -->
-    <VDialog v-model="detailOpen" max-width="1000" scrollable persistent>
-      <VCard class="media-detail-card">
-        <VCardTitle class="d-flex align-center px-4 pt-4 pb-0">
-          <span class="text-h6">{{ (detail || selectedItem)?.title || selectedItem?.name || '媒体详情' }}</span>
-          <VSpacer />
-          <VBtn icon="mdi-close" variant="text" @click="closeMediaDetail" />
-        </VCardTitle>
-        <VCardText class="px-4 pb-4">
-          <!-- 详情加载中 -->
-          <div v-if="detailLoading" class="text-center py-12">
-            <VProgressCircular indeterminate color="primary" />
-            <div class="text-caption text-grey mt-3">正在加载媒体详情...</div>
-          </div>
-          <!-- 详情错误 -->
-          <VAlert v-else-if="detailError" type="error" variant="tonal" class="my-4">
-            {{ detailError }}
-            <template #append>
-              <VBtn size="small" variant="tonal" @click="retryMediaDetail">重试</VBtn>
-            </template>
-          </VAlert>
-          <!-- 详情内容 -->
-          <div v-else-if="detail" class="media-page">
-            <!-- 头部：海报 + 标题 + 操作按钮 -->
-            <div class="media-header">
-              <div class="media-poster">
-                <VImg
-                  :src="resolvePoster(getW500Image(detail.poster_path) || selectedItem?.poster, 'detail-' + detail.tmdb_id)"
-                  cover
-                  class="object-cover ring-1 ring-gray-500"
-                  style="aspect-ratio: 2 / 3"
-                  @error="handlePosterError('detail-' + detail.tmdb_id)"
-                >
-                  <template #placeholder>
-                    <div class="w-full h-full">
-                      <VSkeletonLoader class="object-cover" style="aspect-ratio: 2 / 3" />
-                    </div>
-                  </template>
-                </VImg>
-              </div>
-              <div class="media-title">
-                <h1 class="d-flex flex-column flex-lg-row align-items-center align-items-lg-baseline">
-                  <span>{{ detail.title || selectedItem?.name || '未知名称' }}</span>
-                  <span v-if="detail.year" class="text-lg ms-1">（{{ detail.year }}）</span>
-                  <VChip
-                    v-if="detail.season_number"
-                    size="small"
-                    color="primary"
-                    variant="tonal"
-                    class="ms-2"
-                  >第 {{ detail.season_number }} 季</VChip>
-                </h1>
-                <span class="media-attributes">
-                  <span v-if="detail.runtime || detail.episode_run_time?.[0]">
-                    {{ detail.runtime || detail.episode_run_time?.[0] }}分钟
-                  </span>
-                  <span v-if="(detail.runtime || detail.episode_run_time?.[0]) && detail.genres?.length" class="mx-1">|</span>
-                  <span v-if="detail.genres?.length">{{ getGenresName(detail.genres) }}</span>
-                </span>
-                <div class="mt-2">
-                  <VChip v-if="detail.vote_average" size="small" color="amber" variant="tonal" class="me-2 mb-1">
-                    <VIcon start size="small">mdi-star</VIcon>
-                    {{ detail.vote_average }}
-                  </VChip>
-                  <VChip v-if="detail.status" size="small" variant="tonal" class="me-2 mb-1">
-                    {{ detail.status }}
-                  </VChip>
-                </div>
-                <!-- 操作按钮：系统详情 + 订阅 -->
-                <div class="media-actions">
-                  <VBtn size="small" color="primary" variant="tonal" @click="openSystemMediaDetail">
-                    <VIcon start size="small">mdi-open-in-new</VIcon>
-                    系统详情
-                  </VBtn>
-                  <VBtn
-                    v-if="selectedItem?.tmdbid"
-                    size="small"
-                    class="ms-2"
-                    :color="(selectedItem?.status || '未添加订阅') === '未添加订阅' ? 'success' : 'grey'"
-                    :variant="(selectedItem?.status || '未添加订阅') === '未添加订阅' ? 'elevated' : 'tonal'"
-                    :loading="isSubscribing(selectedItem?.tmdbid)"
-                    :disabled="(selectedItem?.status || '未添加订阅') !== '未添加订阅'"
-                    @click="subscribe(selectedItem)"
-                  >
-                    {{ (selectedItem?.status || '未添加订阅') === '未添加订阅' ? '订阅' : selectedItem?.status }}
-                  </VBtn>
-                </div>
-              </div>
-            </div>
-            <!-- 简介 + 侧边栏 -->
-            <div class="media-overview">
-              <div class="media-overview-left">
-                <div v-if="detail.tagline" class="tagline">{{ detail.tagline }}</div>
-                <h2 v-if="detail.overview" class="mt-3">简介</h2>
-                <p v-if="detail.overview">{{ detail.overview }}</p>
-                <p v-else class="text-grey text-body-2">暂无简介</p>
-                <!-- 导演 -->
-                <ul v-if="detail.directors?.length" class="media-crew mt-4">
-                  <li v-for="director in detail.directors" :key="director.id">
-                    <span>{{ director.job }}</span>
-                    <span class="crew-name">{{ director.name }}</span>
-                  </li>
-                </ul>
-                <!-- 演员阵容 -->
-                <div v-if="detail.tmdb_id" class="cast-section mt-6">
-                  <h2 class="cast-title">演员阵容</h2>
-                  <div v-if="castLoading" class="text-center py-4">
-                    <VProgressCircular indeterminate color="primary" size="small" />
-                    <div class="text-caption text-grey mt-2">加载演员信息...</div>
-                  </div>
-                  <div v-else-if="cast.length" class="cast-list">
-                    <div v-for="person in cast" :key="person.id" class="cast-card">
-                      <VImg
-                        :src="resolvePoster(getW500Image(person.profile_path), 'cast-' + person.id)"
-                        cover
-                        class="cast-photo"
-                        :aspect-ratio="2 / 3"
-                        loading="lazy"
-                        @error="handlePosterError('cast-' + person.id)"
-                      />
-                      <div class="cast-name">{{ person.name }}</div>
-                      <div class="cast-character">{{ person.character }}</div>
-                    </div>
-                  </div>
-                  <div v-else class="text-grey text-body-2">暂无演员信息</div>
-                </div>
-                <!-- 外部链接 -->
-                <div class="mt-4">
-                  <a v-if="detail.tmdb_id" :href="`https://www.themoviedb.org/tv/${detail.tmdb_id}`" target="_blank" class="me-2">
-                    <div class="inline-flex cursor-pointer items-center rounded-full bg-gray-600 px-2 py-1 text-sm text-gray-200 ring-1 ring-gray-500 hover:bg-gray-700">
-                      <VIcon icon="mdi-link" size="small" />
-                      <span class="ms-1">TheMovieDb</span>
-                    </div>
-                  </a>
-                  <a v-if="detail.douban_id" :href="`https://movie.douban.com/subject/${detail.douban_id}`" target="_blank" class="me-2">
-                    <div class="inline-flex cursor-pointer items-center rounded-full bg-gray-600 px-2 py-1 text-sm text-gray-200 ring-1 ring-gray-500 hover:bg-gray-700">
-                      <VIcon icon="mdi-link" size="small" />
-                      <span class="ms-1">豆瓣</span>
-                    </div>
-                  </a>
-                  <a v-if="detail.imdb_id" :href="`https://www.imdb.com/title/${detail.imdb_id}`" target="_blank" class="me-2">
-                    <div class="inline-flex cursor-pointer items-center rounded-full bg-gray-600 px-2 py-1 text-sm text-gray-200 ring-1 ring-gray-500 hover:bg-gray-700">
-                      <VIcon icon="mdi-link" size="small" />
-                      <span class="ms-1">IMDb</span>
-                    </div>
-                  </a>
-                </div>
-              </div>
-              <!-- 侧边栏：评分 + 事实信息 -->
-              <div class="media-overview-right">
-                <div class="media-facts">
-                  <div v-if="detail.vote_average" class="media-ratings">
-                    <VRating :model-value="detail.vote_average" density="compact" length="10" readonly class="ma-2" />
-                  </div>
-                  <div v-if="detail.tmdb_id" class="media-fact">
-                    <span>ID</span>
-                    <span class="media-fact-value">{{ detail.tmdb_id }}</span>
-                  </div>
-                  <div v-if="detail.original_title || detail.original_name" class="media-fact">
-                    <span>原始标题</span>
-                    <span class="media-fact-value">{{ detail.original_title || detail.original_name }}</span>
-                  </div>
-                  <div v-if="detail.status" class="media-fact">
-                    <span>状态</span>
-                    <span class="media-fact-value">{{ detail.status }}</span>
-                  </div>
-                  <div v-if="detail.release_date || detail.first_air_date" class="media-fact">
-                    <span>{{ detail.season_number ? '本季首播' : '发布日期' }}</span>
-                    <span class="media-fact-value">{{ detail.season_number
-                        ? (detail.first_air_date || detail.release_date)
-                        : (detail.release_date || detail.first_air_date) }}</span>
-                  </div>
-                  <div v-if="detail.season_number && detail.number_of_episodes" class="media-fact">
-                    <span>集数</span>
-                    <span class="media-fact-value">第 {{ detail.season_number }} 季 共 {{ detail.number_of_episodes }} 集</span>
-                  </div>
-                  <div v-else-if="detail.number_of_episodes" class="media-fact">
-                    <span>集数</span>
-                    <span class="media-fact-value">{{ detail.number_of_episodes }} 集</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </VCardText>
-      </VCard>
-    </VDialog>
+    <!-- 媒体详情弹窗（旧前端/浏览器降级：宿主未提供 ui.dialog 时内联渲染） -->
+    <MediaDetailDialog
+      v-if="!hostDialogAvailable"
+      v-model="detailOpenLocal"
+      :detail="detail"
+      :loading="detailLoading"
+      :error="detailError"
+      :selected-item="selectedItem"
+      :cast="cast"
+      :cast-loading="castLoading"
+      :subscribing-ids="Array.from(subscribing)"
+      :image-domain="imageDomain"
+      @retry="retryMediaDetail"
+      @system-detail="openSystemMediaDetail"
+      @subscribe="handleDetailSubscribe"
+      @close="handleDetailClosedByDialog"
+    />
     <!-- 成功提示 snackbar -->
     <VSnackbar v-model="snackbarShow" color="success" timeout="3000" location="top">
       {{ snackbarMsg }}
@@ -305,7 +135,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import MediaDetailDialog from './MediaDetailDialog.vue'
 
 // ---- 类型定义 ----
 
@@ -333,6 +164,17 @@ type MediaDetail = Record<string, any>
 const props = defineProps<{
   api?: { get: (url: string, params?: any) => Promise<any>; post: (url: string, data?: any) => Promise<any> }
   pluginId?: string
+  /** 新版前端注入的宿主 SDK；提供 ui.dialog 时详情走宿主弹窗，旧前端回退内联渲染 */
+  hostSdk?: {
+    ui?: {
+      dialog?: (
+        component: any,
+        props?: Record<string, any>,
+        events?: Record<string, (...args: any[]) => void>,
+        options?: { closeOn?: string[] | false },
+      ) => { close: () => void; updateProps: (props: Record<string, any>) => void }
+    }
+  }
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -344,7 +186,12 @@ const fromCache = ref(false)
 const updateTime = ref('')
 /** 宿主 TMDB 图片域名（由后端 get-cache 下发，替代硬编码 image.tmdb.org） */
 const imageDomain = ref('image.tmdb.org')
-const detailOpen = ref(false)
+/** 内联降级模式的详情弹窗开关 */
+const detailOpenLocal = ref(false)
+/** 宿主 ui.dialog 返回的控制器；非空表示详情已通过宿主弹窗打开 */
+const detailController = ref<{ close: () => void; updateProps: (props: Record<string, any>) => void } | null>(null)
+/** 新版前端提供 ui.dialog 时使用宿主弹窗，否则内联渲染详情弹窗 */
+const hostDialogAvailable = computed(() => Boolean(props.hostSdk?.ui?.dialog))
 const detailLoading = ref(false)
 const detailError = ref('')
 const detail = ref<MediaDetail | null>(null)
@@ -508,6 +355,7 @@ async function subscribe(item: HeatItem) {
   if (!props.api) return
 
   subscribing.value.add(item.tmdbid)
+  syncDetailDialog()
   try {
     const result = await props.api.post(url, {
       tmdbid: item.tmdbid,
@@ -531,6 +379,7 @@ async function subscribe(item: HeatItem) {
     alert('订阅失败，请检查网络连接')
   }
   subscribing.value.delete(item.tmdbid)
+  syncDetailDialog()
 
   // 重新读取缓存以同步状态
   await loadCache()
@@ -540,18 +389,94 @@ async function subscribe(item: HeatItem) {
       selectedItem.value = { ...selectedItem.value, status: updated.status }
     }
   }
+  syncDetailDialog()
 }
 
 // ---- 详情弹窗 ----
+
+/** 汇总详情弹窗展示所需的一帧快照，宿主弹窗通过 updateProps 同步 */
+function detailSnapshot() {
+  return {
+    detail: detail.value,
+    loading: detailLoading.value,
+    error: detailError.value,
+    selectedItem: selectedItem.value,
+    cast: cast.value,
+    castLoading: castLoading.value,
+    subscribingIds: Array.from(subscribing.value),
+    imageDomain: imageDomain.value,
+  }
+}
+
+/** 宿主弹窗打开后，把最新详情状态推入弹窗 */
+function syncDetailDialog() {
+  detailController.value?.updateProps(detailSnapshot())
+}
+
+/** 打开详情弹窗：新版前端走宿主 ui.dialog，旧前端/浏览器回退内联渲染 */
+function showDetailDialog() {
+  if (hostDialogAvailable.value) {
+    if (detailController.value) {
+      syncDetailDialog()
+      return
+    }
+    detailController.value = props.hostSdk!.ui!.dialog!(
+      MediaDetailDialog,
+      detailSnapshot(),
+      {
+        close: handleDetailClosedByDialog,
+        retry: retryMediaDetail,
+        'system-detail': openSystemMediaDetail,
+        subscribe: handleDetailSubscribe,
+      },
+      { closeOn: ['close'] },
+    )
+    return
+  }
+  detailOpenLocal.value = true
+}
+
+/** 关闭详情弹窗并清理详情状态 */
+function closeDetailDialog() {
+  detailController.value?.close()
+  detailController.value = null
+  detailOpenLocal.value = false
+  resetDetailState()
+}
+
+/** 详情弹窗自己发起关闭（原生关闭按钮 / 降级内联弹窗） */
+function handleDetailClosedByDialog() {
+  detailController.value = null
+  detailOpenLocal.value = false
+  resetDetailState()
+}
+
+/** 清空详情状态，回到列表 */
+function resetDetailState() {
+  detailLoading.value = false
+  detailError.value = ''
+  detail.value = null
+  selectedItem.value = null
+  cast.value = []
+  castLoading.value = false
+}
+
+/** 详情弹窗内的订阅按钮 */
+function handleDetailSubscribe() {
+  if (selectedItem.value) void subscribe(selectedItem.value)
+}
 
 /** 打开插件内媒体详情弹窗 */
 async function openMediaDetail(item: HeatItem) {
   if (!item.tmdbid) return
   selectedItem.value = item
-  detailOpen.value = true
   detailLoading.value = true
   detailError.value = ''
   detail.value = null
+  cast.value = []
+  castLoading.value = false
+  showDetailDialog()
+  syncDetailDialog()
 
   const url = `media/${encodeURIComponent(String(item.tmdbid))}`
   try {
@@ -562,6 +487,7 @@ async function openMediaDetail(item: HeatItem) {
     } else if (result && typeof result === 'object') {
       detail.value = result
     }
+    syncDetailDialog()
     // 带季数条目：宿主 /media/{id} 返回的是剧集主记录（第 1 季视角），
     // 用该季数据覆盖简介/首播/海报/演员，避免详情页显示成第 1 季。
     const seasonCastReady = item.season ? await applySeasonDetail(item) : false
@@ -570,8 +496,10 @@ async function openMediaDetail(item: HeatItem) {
     }
   } catch (error: any) {
     detailError.value = error?.message || '媒体详情加载失败'
+    syncDetailDialog()
   } finally {
     detailLoading.value = false
+    syncDetailDialog()
   }
 }
 
@@ -593,8 +521,10 @@ async function applySeasonDetail(item: HeatItem): Promise<boolean> {
     // 季详情自带演员时直接采用，避免 cast 接口取到主记录（第 1 季）演员
     if (seasonData.cast?.length) {
       cast.value = seasonData.cast
+      syncDetailDialog()
       return true
     }
+    syncDetailDialog()
   } catch (e) {
     console.warn(componentTag, '季详情加载失败', e)
   }
@@ -605,6 +535,7 @@ async function applySeasonDetail(item: HeatItem): Promise<boolean> {
 async function fetchCast(tmdbId: number) {
   castLoading.value = true
   cast.value = []
+  syncDetailDialog()
   try {
     const url = buildPluginUrl('get-cast')
     const result = await props.api?.get(url, { params: { tmdbid: tmdbId } })
@@ -613,6 +544,7 @@ async function fetchCast(tmdbId: number) {
     console.warn(componentTag, '演员阵容加载失败', e)
   } finally {
     castLoading.value = false
+    syncDetailDialog()
   }
 }
 
@@ -621,18 +553,10 @@ function retryMediaDetail() {
   if (selectedItem.value) void openMediaDetail(selectedItem.value)
 }
 
-/** 关闭详情弹窗 */
-function closeMediaDetail() {
-  detailOpen.value = false
-  detail.value = null
-  detailError.value = ''
-  selectedItem.value = null
-}
-
-/** 关闭插件页面：弹窗开→只关弹窗回列表；否则 emit('close') 通知宿主关闭（PluginDataDialog.vue:198 监听 @close） */
+/** 关闭插件页面：详情弹窗开→只关详情回列表；否则 emit('close') 通知宿主关闭（PluginDataDialog.vue 监听 @close） */
 function closePage() {
-  if (detailOpen.value) {
-    detailOpen.value = false
+  if (detailController.value || detailOpenLocal.value) {
+    closeDetailDialog()
     return
   }
   emit('close')
@@ -665,173 +589,6 @@ onMounted(() => {
 }
 .gap-2 {
   gap: 8px;
-}
-
-/* ---- MediaDetailView-style layout ---- */
-.media-detail-card .media-poster {
-  overflow: hidden;
-  border-radius: var(--app-surface-radius, 12px);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 10%), 0 1px 2px -1px rgba(0, 0, 0, 10%);
-  inline-size: 8rem;
-  transition: border-radius 0.2s ease;
-}
-.media-detail-card .media-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-block-start: 1rem;
-}
-.media-detail-card .media-title {
-  display: flex;
-  flex: 1 1 0%;
-  flex-direction: column;
-  margin-block-start: 1rem;
-  text-align: center;
-}
-.media-detail-card .media-title > h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 2rem;
-  inline-size: 100%;
-}
-@media (width < 1024px) {
-  .media-detail-card .media-title > h1 {
-    align-items: center;
-    text-align: center;
-  }
-}
-.media-detail-card .media-attributes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  margin-block-start: 0.25rem;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-}
-.media-detail-card .media-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-block-start: 1rem;
-  justify-content: center;
-}
-.media-detail-card .media-overview {
-  display: flex;
-  flex-direction: column;
-  padding-block: 2rem 1rem;
-}
-.media-detail-card .media-overview-left {
-  flex: 1 1 0%;
-  min-inline-size: 0;
-}
-.media-detail-card .media-overview h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.75rem;
-}
-.media-detail-card .tagline {
-  font-size: 1.25rem;
-  font-style: italic;
-  line-height: 1.75rem;
-  margin-block-end: 1rem;
-}
-.media-detail-card ul.media-crew {
-  display: grid;
-  gap: 1.5rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-block-start: 1.5rem;
-}
-.media-detail-card ul.media-crew > li {
-  display: flex;
-  flex-direction: column;
-  font-weight: 700;
-  grid-column: span 1 / span 1;
-}
-.media-detail-card .crew-name {
-  font-weight: 400;
-}
-@media (width >= 1280px) {
-  .media-detail-card .media-poster { inline-size: 13rem; }
-  .media-detail-card .media-title > h1 { font-size: 2.25rem; line-height: 2.5rem; }
-}
-.media-detail-card .media-overview-right {
-  display: none;
-}
-.media-detail-card .media-facts {
-  display: flex;
-  flex-direction: column;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  border: 1px solid rgb(55 65 81 / 1);
-}
-.media-detail-card .media-ratings {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid rgb(55 65 81 / 1);
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-}
-.media-detail-card .media-fact {
-  display: flex;
-  justify-content: space-between;
-  border-bottom: 1px solid rgb(55 65 81 / 1);
-  padding: 0.5rem 1rem;
-}
-.media-detail-card .media-fact-value {
-  font-weight: 700;
-}
-@media (width >= 768px) {
-  .media-detail-card .media-poster { inline-size: 11rem; }
-}
-@media (width >= 1024px) {
-  .media-detail-card .media-overview-right { display: block; inline-size: 16rem; }
-  .media-detail-card .media-overview { flex-direction: row; }
-  .media-detail-card .media-overview-left { margin-inline-end: 2rem; }
-  .media-detail-card .media-header { flex-direction: row; align-items: flex-end; gap: 3rem; }
-  .media-detail-card .media-title { margin-block-start: 0; margin-inline-end: 1rem; text-align: start; }
-  .media-detail-card .media-attributes { justify-content: flex-start; }
-  .media-detail-card .media-actions { justify-content: flex-start; }
-}
-@media (width >= 1280px) {
-  .media-detail-card .media-poster { inline-size: 13rem; }
-}
-.media-detail-card .cast-section .cast-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.75rem;
-  margin-block-end: 1rem;
-}
-.media-detail-card .cast-list {
-  display: flex;
-  gap: 0.75rem;
-  overflow-x: auto;
-  padding-block-end: 0.5rem;
-}
-.media-detail-card .cast-card {
-  flex: 0 0 auto;
-  inline-size: 7rem;
-  text-align: center;
-}
-.media-detail-card .cast-photo {
-  border-radius: 0.5rem;
-  margin-block-end: 0.5rem;
-}
-.media-detail-card .cast-name {
-  font-size: 0.875rem;
-  font-weight: 700;
-  line-height: 1.25rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.media-detail-card .cast-character {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: rgb(156 163 175);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 响应式自适应网格：保证每张卡片至少 390px，放得下 4 张就排 4 列，空间小自动退到 3 列甚至 2 列，卡片永不被挤压变形 */
