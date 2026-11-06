@@ -925,9 +925,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.4：详情页改为宿主弹窗，适配 MoviePilot-App 原生关闭与侧滑返回。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.5：今日上新推送改为以猫眼「上线首日」为准，TMDB 日期仅作兜底。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.4"
+    plugin_version = "3.0.5"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -2560,14 +2560,26 @@ class MaoyanDianYing(_PluginBase):
     def __is_today_new(self, item: dict) -> bool:
         """判定榜单条目是否为今日上新。
 
-        - 无季号：比对剧集主记录 ``first_air_date``（原有行为）。
-        - 有季号：比对该季开播日（season 详情），避免用第 1 季日期误判。
-        优先使用 detail/season 缓存，命中时无网络请求。
+        - 优先信猫眼榜单自身的 ``releaseInfo``（item["days"]）：命中“上线首日 /
+          今日上映 / 今日开播”等标记时直接视为今日上新，不再依赖 TMDB 日期。
+        - 猫眼无明确标记时回退 TMDB：无季号比对主记录 ``first_air_date``，
+          有季号比对该季开播日，避免用第 1 季日期误判。
         """
         try:
             name = (item or {}).get("name", "")
             if not name:
                 return False
+
+            # 猫眼 releaseInfo 是“今日上新”最直接的数据源：上线首日即今天开播。
+            # 其余文案（上线2天/上线17天…）不算今日上新，继续走 TMDB 兜底。
+            release_info = str(item.get("days", "") or "").strip()
+            if release_info:
+                maoyan_today_markers = ("上线首日", "今日上映", "今日开播", "首日")
+                if any(marker in release_info for marker in maoyan_today_markers):
+                    logger.info("【今日上新提醒】'%s' 猫眼标记今日上新（%s），直接推送",
+                                name, release_info)
+                    return True
+
             tmdb_info = self.__search_tmdb_with_cache(name)
             if not tmdb_info:
                 logger.debug("【今日上新提醒】'%s' 无 TMDB 数据，跳过", name)
