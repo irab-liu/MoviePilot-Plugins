@@ -15,7 +15,7 @@
   },
   "MaoyanDianYing": {
     "name": "猫眼发现",
-    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.5：今日上新推送改为以猫眼「上线首日」为准，TMDB 日期仅作兜底。",
+    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
     "version": "3.0.5",
     "icon": "Moviepilot_A.png",
