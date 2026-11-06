@@ -15,16 +15,16 @@
   },
   "MaoyanDianYing": {
     "name": "猫眼发现",
-    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.4：详情页改为宿主弹窗，适配 MoviePilot-App 原生关闭与侧滑返回。",
+    "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.5：今日上新推送改为以猫眼「上线首日」为准，TMDB 日期仅作兜底。",
     "labels": "榜单,剧集,猫眼",
-    "version": "3.0.4",
+    "version": "3.0.5",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v3.0.4": "详情页改为宿主弹窗，适配 MoviePilot-App 原生关闭与侧滑返回"
+      "v3.0.5": "今日上新推送改为以猫眼「上线首日」为准，TMDB 日期仅作兜底"
     }
   },
   "MaoyanTop30": {
