@@ -54,5 +54,19 @@
     "history": {
       "v1.0.0": "首次发布：绿联云反馈监控，支持公测反馈和需求反馈的状态追踪与通知。"
     }
+  },
+  "AgentTaskManager": {
+    "name": "Agent 定时任务管理",
+    "description": "可视化查看、启停、编辑、删除 MoviePilot 的 Agent 自主定时任务，并查看运行历史。",
+    "labels": "系统",
+    "version": "1.0.0",
+    "icon": "agenttaskmanager.png",
+    "author": "irab",
+    "level": 2,
+    "release": true,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "初始版本：任务列表、启停、立即执行、编辑、删除、运行历史"
+    }
   }
 }
