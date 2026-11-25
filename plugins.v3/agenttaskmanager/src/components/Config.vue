@@ -2,8 +2,8 @@
 /**
  * Agent 定时任务管理插件配置页。
  *
- * 纯 HTML/CSS 实现，在宿主插件设置中渲染，仅提供插件启用开关；
- * 任务管理功能在侧栏全页中完成。
+ * 在宿主插件设置中渲染，使用宿主全局注册的 Vuetify 组件；
+ * 仅提供插件启用开关，任务管理功能在侧栏全页中完成。
  */
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import { errorMessage, pluginRequest } from '../utils/api'
@@ -61,133 +61,54 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="atm-config">
-    <div class="atm-config-card">
-      <div class="atm-config-head">
-        <div>
-          <div class="atm-config-title">Agent 定时任务管理</div>
-          <div class="atm-config-sub">仅提供管理界面，不新建调度器</div>
-        </div>
-        <button class="atm-config-close" @click="emit('close')">×</button>
-      </div>
-      <div class="atm-config-body">
-        <div class="atm-config-tip">
-          启用后可在左侧「系统」分组找到「Agent 定时任务」入口。新建任务仍通过对话让
-          Agent 使用 agent_task 工具创建。
+    <v-card variant="outlined" rounded="lg">
+      <v-card-title class="d-flex align-center">
+        Agent 定时任务管理
+        <v-spacer />
+        <v-btn size="small" variant="text" icon="mdi-close" @click="emit('close')" />
+      </v-card-title>
+      <v-card-text>
+        <v-alert type="info" variant="tonal" class="mb-4" density="compact">
+          本插件只提供 Agent 自主定时任务的管理界面，不新建调度器。启用后可在左侧「系统」分组找到入口。
+        </v-alert>
+
+        <div class="d-flex align-center mb-4">
+          <v-switch
+            v-model="form.enabled"
+            color="primary"
+            density="compact"
+            hide-details
+            label="启用插件"
+            class="mr-4"
+          />
         </div>
 
-        <label class="atm-config-switch">
-          <input v-model="form.enabled" type="checkbox" />
-          <span>启用插件</span>
-        </label>
-
-        <div v-if="message.show" class="atm-config-msg" :class="`atm-config-msg--${message.type}`">
-          {{ message.text }}
-        </div>
-      </div>
-      <div class="atm-config-foot">
-        <button class="atm-config-btn atm-config-btn--primary" :disabled="saving" @click="saveConfig">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-      </div>
-    </div>
+        <Transition name="fade">
+          <v-alert
+            v-if="message.show"
+            :type="message.type"
+            variant="tonal"
+            density="compact"
+          >
+            {{ message.text }}
+          </v-alert>
+        </Transition>
+      </v-card-text>
+      <v-card-actions class="px-4 pb-4">
+        <v-spacer />
+        <v-btn color="primary" :loading="saving" @click="saveConfig">保存</v-btn>
+      </v-card-actions>
+    </v-card>
   </div>
 </template>
 
 <style scoped>
-.atm-config {
-  padding: 16px;
-  font-size: 14px;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
-.atm-config-card {
-  max-width: 640px;
-  margin: 0 auto;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 10px;
-  background: #1e1e1e;
-  color: #e0e0e0;
-  overflow: hidden;
-}
-.atm-config-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-}
-.atm-config-title {
-  font-size: 16px;
-  font-weight: 700;
-}
-.atm-config-sub {
-  margin-top: 2px;
-  font-size: 12px;
-  color: rgba(224, 224, 224, 0.6);
-}
-.atm-config-close {
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 20px;
-  cursor: pointer;
-}
-.atm-config-body {
-  padding: 16px;
-}
-.atm-config-tip {
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: rgba(2, 136, 209, 0.1);
-  border: 1px solid rgba(2, 136, 209, 0.4);
-  font-size: 13px;
-}
-.atm-config-switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-.atm-config-switch input {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-.atm-config-msg {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: rgba(128, 128, 128, 0.15);
-}
-.atm-config-msg--success {
-  background: rgba(46, 125, 50, 0.2);
-  color: #81c784;
-}
-.atm-config-msg--error {
-  background: rgba(198, 40, 40, 0.2);
-  color: #ef9a9a;
-}
-.atm-config-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 16px;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
-}
-.atm-config-btn {
-  padding: 8px 18px;
-  border: 1px solid rgba(128, 128, 128, 0.45);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.atm-config-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.atm-config-btn--primary {
-  border-color: #1976d2;
-  background: #1976d2;
-  color: #fff;
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
