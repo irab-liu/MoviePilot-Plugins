@@ -2,8 +2,8 @@
 /**
  * Agent 定时任务管理主页面。
  *
- * 纯 HTML/CSS 实现，不依赖宿主 Vuetify 组件，保证在远程联邦组件上下文中
- * 按钮、开关、弹窗与提示都可用。交互错误由后端返回明确文案。
+ * 使用宿主全局注册的 Vuetify 组件渲染；按钮不因 running/停用状态被禁用，
+ * 不可执行时由后端返回明确提示，避免出现按钮全灰无法点击的问题。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
@@ -24,9 +24,15 @@ const loading = ref(false)
 const tasks = ref([])
 const total = ref(0)
 const aiAgentEnable = ref(true)
-const filterEnabled = ref('')
+const filterEnabled = ref(null)
 const busyIds = ref(new Set())
-const snackbar = reactive({ show: false, text: '', type: 'info' })
+const snackbar = reactive({ show: false, text: '', color: 'info' })
+
+const filterOptions = [
+  { title: '全部', value: null },
+  { title: '已启用', value: true },
+  { title: '已停用', value: false },
+]
 
 const editDialog = ref(false)
 const editSaving = ref(false)
@@ -50,25 +56,11 @@ const deleteLoading = ref(false)
 
 const hasTasks = computed(() => tasks.value.length > 0)
 
-/** 触发配置占位提示。 */
-const triggerHint = computed(() =>
-  editForm.trigger_type === 'cron'
-    ? '标准五段 cron 表达式，例如：0 10,22 * * *'
-    : '带时区 ISO 8601 时间，例如：2026-12-31 08:00:00',
-)
-
-let toastTimer = null
-
-/** 显示一条自动消失的提示。 */
-function showToast(text, type = 'info') {
-  if (toastTimer) clearTimeout(toastTimer)
+/** 显示一条顶部提示。 */
+function showSnackbar(text, color = 'info') {
   snackbar.text = text
-  snackbar.type = type
+  snackbar.color = color
   snackbar.show = true
-  toastTimer = setTimeout(() => {
-    snackbar.show = false
-    toastTimer = null
-  }, 4000)
 }
 
 /** 标记某行正在操作。 */
@@ -84,9 +76,7 @@ async function loadTasks() {
   loading.value = true
   try {
     const params = {}
-    if (filterEnabled.value === 'true' || filterEnabled.value === 'false') {
-      params.enabled = filterEnabled.value
-    }
+    if (filterEnabled.value !== null) params.enabled = filterEnabled.value ? 'true' : 'false'
     const result = await pluginRequest(props.api, props.pluginId, '/tasks', {
       method: 'GET',
       params,
@@ -95,7 +85,7 @@ async function loadTasks() {
     total.value = result?.total || 0
     aiAgentEnable.value = result?.ai_agent_enable !== false
   } catch (error) {
-    showToast(errorMessage(error, '加载任务列表失败'), 'error')
+    showSnackbar(errorMessage(error, '加载任务列表失败'), 'error')
   } finally {
     loading.value = false
   }
@@ -117,9 +107,9 @@ async function onToggle(row, value) {
     } else {
       row.enabled = value
     }
-    showToast(result?.message || (value ? '任务已启用' : '任务已停用'), 'success')
+    showSnackbar(result?.message || (value ? '任务已启用' : '任务已停用'), 'success')
   } catch (error) {
-    showToast(errorMessage(error, '启停任务失败'), 'error')
+    showSnackbar(errorMessage(error, '启停任务失败'), 'error')
     await loadTasks()
   } finally {
     setBusy(row.id, false)
@@ -136,10 +126,10 @@ async function onRun(row) {
       `/tasks/${row.id}/run`,
       { method: 'POST' },
     )
-    showToast(result?.message || '已提交立即执行', 'success')
+    showSnackbar(result?.message || '已提交立即执行', 'success')
     await loadTasks()
   } catch (error) {
-    showToast(errorMessage(error, '立即执行失败'), 'error')
+    showSnackbar(errorMessage(error, '立即执行失败'), 'error')
   } finally {
     setBusy(row.id, false)
   }
@@ -159,11 +149,11 @@ function openEdit(row) {
 /** 保存编辑。 */
 async function saveEdit() {
   if (!editForm.name.trim()) {
-    showToast('任务名称不能为空', 'error')
+    showSnackbar('任务名称不能为空', 'error')
     return
   }
   if (!editForm.content.trim()) {
-    showToast('任务指令不能为空', 'error')
+    showSnackbar('任务指令不能为空', 'error')
     return
   }
   const body = {
@@ -173,13 +163,13 @@ async function saveEdit() {
   }
   if (editForm.trigger_type === 'cron') {
     if (!editForm.cron_expression.trim()) {
-      showToast('请填写五段 cron 表达式', 'error')
+      showSnackbar('请填写五段 cron 表达式', 'error')
       return
     }
     body.cron_expression = editForm.cron_expression.trim()
   } else {
     if (!editForm.run_at.trim()) {
-      showToast('请填写单次触发时间', 'error')
+      showSnackbar('请填写单次触发时间', 'error')
       return
     }
     body.run_at = editForm.run_at.trim()
@@ -193,11 +183,11 @@ async function saveEdit() {
       `/tasks/${editForm.id}/update`,
       { method: 'POST', body },
     )
-    showToast(result?.message || '任务已更新', 'success')
+    showSnackbar(result?.message || '任务已更新', 'success')
     editDialog.value = false
     await loadTasks()
   } catch (error) {
-    showToast(errorMessage(error, '保存任务失败'), 'error')
+    showSnackbar(errorMessage(error, '保存任务失败'), 'error')
   } finally {
     editSaving.value = false
   }
@@ -218,7 +208,7 @@ async function openHistory(row) {
     )
     historyRuns.value = result?.runs || []
   } catch (error) {
-    showToast(errorMessage(error, '加载运行历史失败'), 'error')
+    showSnackbar(errorMessage(error, '加载运行历史失败'), 'error')
   } finally {
     historyLoading.value = false
   }
@@ -241,12 +231,12 @@ async function confirmDelete() {
       `/tasks/${deleteTarget.value.id}/delete`,
       { method: 'POST' },
     )
-    showToast(result?.message || '任务已删除', 'success')
+    showSnackbar(result?.message || '任务已删除', 'success')
     deleteDialog.value = false
     deleteTarget.value = null
     await loadTasks()
   } catch (error) {
-    showToast(errorMessage(error, '删除任务失败'), 'error')
+    showSnackbar(errorMessage(error, '删除任务失败'), 'error')
   } finally {
     deleteLoading.value = false
   }
@@ -257,171 +247,264 @@ function triggerSourceLabel(source) {
   return source === 'manual' ? '手动' : source === 'scheduled' ? '定时' : source || '未知'
 }
 
+/** 触发配置占位提示。 */
+const triggerHint = computed(() =>
+  editForm.trigger_type === 'cron'
+    ? '标准五段 cron 表达式，例如：0 10,22 * * *'
+    : '带时区 ISO 8601 时间，例如：2026-12-31 08:00:00',
+)
+
 onMounted(loadTasks)
 </script>
 
 <template>
   <div class="atm-page">
-    <div class="atm-header">
-      <div class="atm-title">
-        <span class="atm-title-icon">⏰</span>
-        <span>Agent 定时任务</span>
-        <span class="atm-count">{{ total }}</span>
-      </div>
-      <button class="atm-btn" :disabled="loading" @click="loadTasks">
-        {{ loading ? '刷新中…' : '刷新' }}
-      </button>
-    </div>
+    <v-container fluid class="pa-4">
+      <v-row>
+        <v-col cols="12">
+          <div class="d-flex align-center flex-wrap gap-2 mb-4">
+            <v-icon size="x-small" class="mr-1">mdi-clock-outline</v-icon>
+            <span class="text-h6 font-weight-bold">Agent 定时任务</span>
+            <v-chip size="small" color="primary" variant="tonal">{{ total }}</v-chip>
+            <v-spacer />
+            <v-btn
+              size="small"
+              color="primary"
+              variant="tonal"
+              :loading="loading"
+              @click="loadTasks"
+            >
+              <v-icon start>mdi-refresh</v-icon>
+              刷新
+            </v-btn>
+          </div>
+        </v-col>
+      </v-row>
 
-    <div v-if="!aiAgentEnable" class="atm-alert atm-alert--warn">
-      AI Agent 未启用（AI_AGENT_ENABLE=false），自主定时任务不会被调度执行。此处仅能查看和管理任务配置。
-    </div>
+      <v-row>
+        <v-col cols="12">
+          <v-alert
+            v-if="!aiAgentEnable"
+            type="warning"
+            variant="tonal"
+            class="mb-4"
+            icon="mdi-alert"
+            prominent
+          >
+            AI Agent 未启用（AI_AGENT_ENABLE=false），自主定时任务不会被调度执行。此处仅能查看和管理任务配置。
+          </v-alert>
 
-    <div class="atm-toolbar">
-      <select v-model="filterEnabled" class="atm-select" @change="loadTasks">
-        <option value="">全部状态</option>
-        <option value="true">已启用</option>
-        <option value="false">已停用</option>
-      </select>
-    </div>
-
-    <div v-if="loading && !hasTasks" class="atm-empty">正在加载任务列表…</div>
-
-    <div v-else-if="!hasTasks" class="atm-alert atm-alert--info">
-      暂无 Agent 定时任务。新建任务仍通过对话让 Agent 使用 agent_task 工具创建。
-    </div>
-
-    <div v-else class="atm-table-wrap">
-      <table class="atm-table">
-        <thead>
-          <tr>
-            <th>任务</th>
-            <th>触发</th>
-            <th>最近状态</th>
-            <th>上次运行</th>
-            <th>次数</th>
-            <th>下次运行</th>
-            <th>启用</th>
-            <th class="atm-right">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in tasks" :key="row.id">
-            <td>
-              <div class="atm-name">{{ row.name }}</div>
-              <div v-if="row.owner_username || row.owner_user_id" class="atm-sub">
-                归属：{{ row.owner_username || row.owner_user_id }}
+          <v-card variant="outlined" rounded="lg">
+            <v-card-text>
+              <div class="d-flex align-center mb-3">
+                <v-select
+                  v-model="filterEnabled"
+                  :items="filterOptions"
+                  label="启用状态"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  class="atm-filter"
+                  @update:model-value="loadTasks"
+                />
               </div>
-              <div class="atm-sub">
-                ID {{ row.id }} · {{ triggerTypeLabel(row.trigger_type) }}
+
+              <div v-if="loading && !hasTasks" class="text-center py-8">
+                <v-progress-circular indeterminate color="primary" />
+                <div class="text-caption text-grey mt-2">正在加载任务列表…</div>
               </div>
-            </td>
-            <td class="atm-mono">{{ triggerText(row) }}</td>
-            <td>
-              <span class="atm-badge" :class="`atm-badge--${statusMeta(row.last_status).chip}`">
-                {{ statusMeta(row.last_status).label }}
-              </span>
-            </td>
-            <td class="atm-sub">{{ row.last_run_at || '—' }}</td>
-            <td class="atm-sub">{{ row.run_count }}</td>
-            <td class="atm-mono">{{ row.next_run_at || '—' }}</td>
-            <td>
-              <button
-                class="atm-btn atm-btn--sm"
-                :class="row.enabled ? 'atm-btn--on' : 'atm-btn--off'"
-                :disabled="busyIds.has(row.id)"
-                @click="onToggle(row, !row.enabled)"
+
+              <v-alert
+                v-else-if="!hasTasks"
+                type="info"
+                variant="tonal"
+                icon="mdi-information"
               >
-                {{ busyIds.has(row.id) ? '…' : row.enabled ? '停用' : '启用' }}
-              </button>
-            </td>
-            <td class="atm-right">
-              <div class="atm-actions">
-                <button
-                  class="atm-btn atm-btn--sm"
-                  :disabled="busyIds.has(row.id)"
-                  @click="onRun(row)"
-                >
-                  执行
-                </button>
-                <button
-                  class="atm-btn atm-btn--sm"
-                  :disabled="busyIds.has(row.id)"
-                  @click="openEdit(row)"
-                >
-                  编辑
-                </button>
-                <button class="atm-btn atm-btn--sm" @click="openHistory(row)">历史</button>
-                <button
-                  class="atm-btn atm-btn--sm atm-btn--danger"
-                  :disabled="busyIds.has(row.id)"
-                  @click="openDelete(row)"
-                >
-                  删除
-                </button>
+                暂无 Agent 定时任务。新建任务仍通过对话让 Agent 使用 agent_task 工具创建。
+              </v-alert>
+
+              <div v-else class="atm-table-wrap">
+                <table class="atm-table">
+                  <thead>
+                    <tr>
+                      <th>任务</th>
+                      <th>触发</th>
+                      <th>最近状态</th>
+                      <th>上次运行</th>
+                      <th>次数</th>
+                      <th>下次运行</th>
+                      <th>启用</th>
+                      <th class="text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in tasks" :key="row.id">
+                      <td>
+                        <div class="font-weight-medium">{{ row.name }}</div>
+                        <div
+                          v-if="row.owner_username || row.owner_user_id"
+                          class="text-caption text-grey"
+                        >
+                          归属：{{ row.owner_username || row.owner_user_id }}
+                        </div>
+                        <div class="text-caption text-grey">
+                          ID {{ row.id }}
+                          <v-chip size="x-small" variant="tonal" class="ml-1">
+                            {{ triggerTypeLabel(row.trigger_type) }}
+                          </v-chip>
+                        </div>
+                      </td>
+                      <td class="text-caption atm-mono">{{ triggerText(row) }}</td>
+                      <td>
+                        <v-chip size="small" :color="statusMeta(row.last_status).chip">
+                          {{ statusMeta(row.last_status).label }}
+                        </v-chip>
+                      </td>
+                      <td class="text-caption">{{ row.last_run_at || '—' }}</td>
+                      <td class="text-caption">{{ row.run_count }}</td>
+                      <td class="text-caption atm-mono">{{ row.next_run_at || '—' }}</td>
+                      <td>
+                        <v-switch
+                          :model-value="Boolean(row.enabled)"
+                          :disabled="busyIds.has(row.id)"
+                          density="compact"
+                          hide-details
+                          color="primary"
+                          @update:model-value="(value) => onToggle(row, value)"
+                        />
+                      </td>
+                      <td class="text-right">
+                        <div class="d-inline-flex flex-wrap justify-end gap-1">
+                          <v-btn
+                            size="x-small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="busyIds.has(row.id)"
+                            @click="onRun(row)"
+                          >
+                            执行
+                          </v-btn>
+                          <v-btn
+                            size="x-small"
+                            variant="tonal"
+                            :disabled="busyIds.has(row.id)"
+                            @click="openEdit(row)"
+                          >
+                            编辑
+                          </v-btn>
+                          <v-btn
+                            size="x-small"
+                            variant="tonal"
+                            @click="openHistory(row)"
+                          >
+                            历史
+                          </v-btn>
+                          <v-btn
+                            size="x-small"
+                            variant="tonal"
+                            color="error"
+                            :disabled="busyIds.has(row.id)"
+                            @click="openDelete(row)"
+                          >
+                            删除
+                          </v-btn>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
 
     <!-- 编辑弹窗 -->
-    <div v-if="editDialog" class="atm-modal">
-      <div class="atm-modal-mask" @click="editDialog = false"></div>
-      <div class="atm-modal-box">
-        <div class="atm-modal-head">
-          <span>编辑任务 #{{ editForm.id }}</span>
-          <button class="atm-close" @click="editDialog = false">×</button>
-        </div>
-        <div class="atm-modal-body">
-          <label class="atm-field">
-            <span>任务名称</span>
-            <input v-model="editForm.name" maxlength="100" />
-          </label>
-          <div class="atm-row">
-            <label class="atm-field">
-              <span>触发类型</span>
-              <select v-model="editForm.trigger_type">
-                <option value="cron">周期（cron）</option>
-                <option value="date">单次（date）</option>
-              </select>
-            </label>
-            <label v-if="editForm.trigger_type === 'cron'" class="atm-field">
-              <span>cron 表达式</span>
-              <input v-model="editForm.cron_expression" />
-            </label>
-            <label v-else class="atm-field">
-              <span>单次触发时间</span>
-              <input v-model="editForm.run_at" />
-            </label>
+    <v-dialog v-model="editDialog" max-width="720" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center">
+          编辑任务 #{{ editForm.id }}
+          <v-spacer />
+          <v-btn size="small" variant="text" icon="mdi-close" @click="editDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="editForm.name"
+            label="任务名称"
+            variant="outlined"
+            density="compact"
+            maxlength="100"
+            class="mb-3"
+          />
+          <div class="d-flex gap-2 mb-3">
+            <v-select
+              v-model="editForm.trigger_type"
+              :items="[
+                { title: '周期（cron）', value: 'cron' },
+                { title: '单次（date）', value: 'date' },
+              ]"
+              label="触发类型"
+              variant="outlined"
+              density="compact"
+              hide-details
+              class="atm-trigger-select"
+            />
+            <v-text-field
+              v-if="editForm.trigger_type === 'cron'"
+              v-model="editForm.cron_expression"
+              label="cron 表达式"
+              variant="outlined"
+              density="compact"
+              hide-details
+            />
+            <v-text-field
+              v-else
+              v-model="editForm.run_at"
+              label="单次触发时间"
+              variant="outlined"
+              density="compact"
+              hide-details
+            />
           </div>
-          <div class="atm-hint">{{ triggerHint }}</div>
-          <label class="atm-field">
-            <span>任务指令（交给 Agent 执行的完整内容）</span>
-            <textarea v-model="editForm.content" rows="6" maxlength="10000"></textarea>
-          </label>
-        </div>
-        <div class="atm-modal-foot">
-          <button class="atm-btn" @click="editDialog = false">取消</button>
-          <button class="atm-btn atm-btn--primary" :disabled="editSaving" @click="saveEdit">
-            {{ editSaving ? '保存中…' : '保存' }}
-          </button>
-        </div>
-      </div>
-    </div>
+          <div class="text-caption text-grey mb-3">{{ triggerHint }}</div>
+          <v-textarea
+            v-model="editForm.content"
+            label="任务指令（交给 Agent 执行的完整内容）"
+            variant="outlined"
+            density="compact"
+            rows="6"
+            maxlength="10000"
+            hide-details
+          />
+        </v-card-text>
+        <v-card-actions class="px-4 pb-4">
+          <v-spacer />
+          <v-btn variant="text" @click="editDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="editSaving" @click="saveEdit">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 运行历史弹窗 -->
-    <div v-if="historyDialog" class="atm-modal">
-      <div class="atm-modal-mask" @click="historyDialog = false"></div>
-      <div class="atm-modal-box atm-modal-box--wide">
-        <div class="atm-modal-head">
-          <span>运行历史：{{ historyTask?.name || '' }}</span>
-          <button class="atm-close" @click="historyDialog = false">×</button>
-        </div>
-        <div class="atm-modal-body">
-          <div v-if="historyLoading" class="atm-empty">正在加载运行历史…</div>
-          <div v-else-if="!historyRuns.length" class="atm-alert atm-alert--info">暂无运行历史。</div>
+    <v-dialog v-model="historyDialog" max-width="860">
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center">
+          运行历史：{{ historyTask?.name || '' }}
+          <v-spacer />
+          <v-btn size="small" variant="text" icon="mdi-close" @click="historyDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <div v-if="historyLoading" class="text-center py-8">
+            <v-progress-circular indeterminate color="primary" />
+          </div>
+          <v-alert
+            v-else-if="!historyRuns.length"
+            type="info"
+            variant="tonal"
+          >
+            暂无运行历史。
+          </v-alert>
           <div v-else class="atm-table-wrap">
             <table class="atm-table">
               <thead>
@@ -436,330 +519,92 @@ onMounted(loadTasks)
               </thead>
               <tbody>
                 <tr v-for="run in historyRuns" :key="run.run_id">
-                  <td class="atm-mono">{{ run.run_id }}</td>
-                  <td class="atm-sub">{{ triggerSourceLabel(run.trigger_source) }}</td>
+                  <td class="text-caption atm-mono">{{ run.run_id }}</td>
+                  <td class="text-caption">{{ triggerSourceLabel(run.trigger_source) }}</td>
                   <td>
-                    <span class="atm-badge" :class="`atm-badge--${statusMeta(run.status).chip}`">
+                    <v-chip size="small" :color="statusMeta(run.status).chip">
                       {{ statusMeta(run.status).label }}
-                    </span>
+                    </v-chip>
                   </td>
-                  <td class="atm-sub">{{ run.started_at || '—' }}</td>
-                  <td class="atm-sub">{{ run.finished_at || '—' }}</td>
-                  <td class="atm-result-cell">
-                    <details v-if="run.result">
-                      <summary>查看结果</summary>
-                      <pre class="atm-result">{{ run.result }}</pre>
-                    </details>
-                    <span v-else>—</span>
+                  <td class="text-caption">{{ run.started_at || '—' }}</td>
+                  <td class="text-caption">{{ run.finished_at || '—' }}</td>
+                  <td class="text-caption atm-result-cell">
+                    <template v-if="run.result">
+                      <details>
+                        <summary class="atm-result-toggle">查看结果</summary>
+                        <pre class="atm-result">{{ run.result }}</pre>
+                      </details>
+                    </template>
+                    <template v-else>—</template>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
-        <div class="atm-modal-foot">
-          <button class="atm-btn" @click="historyDialog = false">关闭</button>
-        </div>
-      </div>
-    </div>
+        </v-card-text>
+        <v-card-actions class="px-4 pb-4">
+          <v-spacer />
+          <v-btn variant="text" @click="historyDialog = false">关闭</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 删除确认弹窗 -->
-    <div v-if="deleteDialog" class="atm-modal">
-      <div class="atm-modal-mask" @click="deleteDialog = false"></div>
-      <div class="atm-modal-box">
-        <div class="atm-modal-head">
-          <span>删除任务</span>
-          <button class="atm-close" @click="deleteDialog = false">×</button>
-        </div>
-        <div class="atm-modal-body">
+    <v-dialog v-model="deleteDialog" max-width="480" persistent>
+      <v-card rounded="lg">
+        <v-card-title>删除任务</v-card-title>
+        <v-card-text>
           确定要删除任务「{{ deleteTarget?.name || '' }}」（#{{ deleteTarget?.id || '' }}）吗？
           删除会一并清除其全部运行历史，且不可恢复。
-        </div>
-        <div class="atm-modal-foot">
-          <button class="atm-btn" @click="deleteDialog = false">取消</button>
-          <button class="atm-btn atm-btn--danger" :disabled="deleteLoading" @click="confirmDelete">
-            {{ deleteLoading ? '删除中…' : '删除' }}
-          </button>
-        </div>
-      </div>
-    </div>
+        </v-card-text>
+        <v-card-actions class="px-4 pb-4">
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="deleteLoading" @click="confirmDelete">删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
-    <!-- 全局提示 -->
-    <Transition name="atm-toast-fade">
-      <div v-if="snackbar.show" class="atm-toast" :class="`atm-toast--${snackbar.type}`">
-        {{ snackbar.text }}
-      </div>
-    </Transition>
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
+      {{ snackbar.text }}
+    </v-snackbar>
   </div>
 </template>
 
 <style scoped>
-.atm-page {
-  padding: 16px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: inherit;
+.atm-filter {
+  max-width: 220px;
 }
-.atm-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.atm-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 700;
-}
-.atm-title-icon {
-  font-size: 18px;
-}
-.atm-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: rgba(128, 128, 128, 0.18);
-  font-size: 12px;
-}
-.atm-toolbar {
-  margin-bottom: 12px;
-}
-.atm-select,
-.atm-field input,
-.atm-field select,
-.atm-field textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 14px;
-}
-.atm-select {
-  width: auto;
-  min-width: 160px;
-}
-.atm-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 7px 14px;
-  border: 1px solid rgba(128, 128, 128, 0.45);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.atm-btn:hover:not(:disabled) {
-  border-color: currentColor;
-}
-.atm-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.atm-btn--sm {
-  padding: 4px 10px;
-  font-size: 12px;
-}
-.atm-btn--primary {
-  border-color: #1976d2;
-  background: #1976d2;
-  color: #fff;
-}
-.atm-btn--danger {
-  border-color: #d32f2f;
-  color: #d32f2f;
-}
-.atm-btn--on {
-  border-color: #2e7d32;
-  color: #2e7d32;
-}
-.atm-btn--off {
-  color: #757575;
-}
-.atm-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.atm-alert {
-  padding: 10px 12px;
-  border-radius: 6px;
-  margin-bottom: 12px;
-  border: 1px solid transparent;
-}
-.atm-alert--warn {
-  background: rgba(237, 108, 2, 0.12);
-  border-color: rgba(237, 108, 2, 0.5);
-  color: #ed6c02;
-}
-.atm-alert--info {
-  background: rgba(2, 136, 209, 0.1);
-  border-color: rgba(2, 136, 209, 0.4);
-}
-.atm-empty {
-  padding: 32px 8px;
-  text-align: center;
-  color: rgba(128, 128, 128, 0.9);
+.atm-trigger-select {
+  max-width: 220px;
 }
 .atm-table-wrap {
   overflow-x: auto;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 8px;
 }
 .atm-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 920px;
+  min-width: 960px;
 }
 .atm-table th,
 .atm-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
   vertical-align: middle;
   text-align: left;
 }
 .atm-table th {
   font-size: 12px;
-  color: rgba(128, 128, 128, 0.95);
+  color: rgba(var(--v-theme-on-surface), 0.6);
   white-space: nowrap;
-}
-.atm-table tr:last-child td {
-  border-bottom: none;
-}
-.atm-right {
-  text-align: right !important;
-}
-.atm-name {
-  font-weight: 600;
-}
-.atm-sub {
-  font-size: 12px;
-  color: rgba(128, 128, 128, 0.95);
 }
 .atm-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: nowrap;
-  font-size: 12px;
 }
-.atm-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.atm-badge--grey {
-  background: rgba(128, 128, 128, 0.2);
-}
-.atm-badge--info {
-  background: rgba(2, 136, 209, 0.15);
-  color: #0288d1;
-}
-.atm-badge--success {
-  background: rgba(46, 125, 50, 0.15);
-  color: #2e7d32;
-}
-.atm-badge--error {
-  background: rgba(211, 47, 47, 0.15);
-  color: #d32f2f;
-}
-.atm-badge--warning {
-  background: rgba(237, 108, 2, 0.15);
-  color: #ed6c02;
-}
-.atm-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.atm-modal-mask {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-}
-.atm-modal-box {
-  position: relative;
-  width: 100%;
-  max-width: 720px;
-  max-height: 86vh;
-  overflow: auto;
-  background: #1e1e1e;
-  border: 1px solid rgba(128, 128, 128, 0.4);
-  border-radius: 10px;
-  color: #e0e0e0;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-}
-.atm-modal-box--wide {
-  max-width: 880px;
-}
-.atm-modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  font-weight: 700;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-}
-.atm-modal-body {
-  padding: 16px;
-}
-.atm-modal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
-}
-.atm-close {
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 20px;
+.atm-result-toggle {
   cursor: pointer;
-}
-.atm-field {
-  display: block;
-  margin-bottom: 12px;
-}
-.atm-field span {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  color: rgba(224, 224, 224, 0.7);
-}
-.atm-row {
-  display: flex;
-  gap: 12px;
-}
-.atm-row .atm-field {
-  flex: 1;
-}
-.atm-hint {
-  margin: -4px 0 12px;
-  font-size: 12px;
-  color: rgba(224, 224, 224, 0.55);
-}
-.atm-result-cell summary {
-  cursor: pointer;
-  color: #64b5f6;
+  color: rgb(var(--v-theme-primary));
   user-select: none;
 }
 .atm-result {
@@ -768,42 +613,8 @@ onMounted(loadTasks)
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: rgba(224, 224, 224, 0.8);
-}
-.atm-toast {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  z-index: 4000;
-  max-width: min(480px, calc(100vw - 32px));
-  padding: 10px 16px;
-  border-radius: 8px;
-  background: #333;
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-  word-break: break-all;
-}
-.atm-toast--success {
-  background: #2e7d32;
-}
-.atm-toast--error {
-  background: #c62828;
-}
-.atm-toast-fade-enter-active,
-.atm-toast-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.atm-toast-fade-enter-from,
-.atm-toast-fade-leave-to {
-  opacity: 0;
-}
-@media (max-width: 640px) {
-  .atm-row {
-    flex-direction: column;
-    gap: 0;
-  }
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(var(--v-theme-on-surface), 0.75);
 }
 </style>

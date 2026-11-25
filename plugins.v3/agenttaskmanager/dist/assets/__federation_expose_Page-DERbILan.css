@@ -1,0 +1,46 @@
+
+.atm-filter[data-v-e6b15382] {
+  max-width: 220px;
+}
+.atm-trigger-select[data-v-e6b15382] {
+  max-width: 220px;
+}
+.atm-table-wrap[data-v-e6b15382] {
+  overflow-x: auto;
+}
+.atm-table[data-v-e6b15382] {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 960px;
+}
+.atm-table th[data-v-e6b15382],
+.atm-table td[data-v-e6b15382] {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+  vertical-align: middle;
+  text-align: left;
+}
+.atm-table th[data-v-e6b15382] {
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  white-space: nowrap;
+}
+.atm-mono[data-v-e6b15382] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+.atm-result-toggle[data-v-e6b15382] {
+  cursor: pointer;
+  color: rgb(var(--v-theme-primary));
+  user-select: none;
+}
+.atm-result[data-v-e6b15382] {
+  max-width: 360px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(var(--v-theme-on-surface), 0.75);
+}
