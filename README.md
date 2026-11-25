@@ -80,6 +80,20 @@
 
 ---
 
+### 5. Agent 定时任务管理 (AgentTaskManager)
+
+**版本**：v1.0.0
+
+**描述**：可视化查看、启停、编辑、删除 MoviePilot 的 Agent 自主定时任务，并查看运行历史。
+
+**功能**：
+- 任务列表：查看 Agent 自主定时任务
+- 启停、立即执行、编辑、删除任务
+- 查看运行历史
+- 多用户隔离：非管理员仅可见自己的任务
+
+---
+
 ## 📥 安装方式
 
 1. 在 MoviePilot 后台 → 插件市场 → 搜索插件名称
@@ -124,6 +138,9 @@
 ### IrabSubscribeReminder
 - v1.0.7：详情页改为表格形式：序号/类型/名称/更新集数
 
+### AgentTaskManager
+- v1.0.0：初始版本：任务列表、启停、立即执行、编辑、删除、运行历史
+
 ---
 
 ## 🔗 下载链接
@@ -146,6 +163,7 @@
 - [MaoyanTop30 v1.1.1](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/MaoyanTop30_v1.1.1)
 - [ugnasfeedback v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/ugnasfeedback_v1.0.0)
 - [IrabSubscribeReminder v1.0.7](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/IrabSubscribeReminder_v1.0.7)
+- [AgentTaskManager v1.0.0](https://github.com/irab-liu/MoviePilot-Plugins/releases/tag/AgentTaskManager_v1.0.0)
 
 ---
 
