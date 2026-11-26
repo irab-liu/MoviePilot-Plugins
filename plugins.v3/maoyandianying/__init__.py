@@ -632,6 +632,10 @@ class _WeComMpnews:
                     expire_at = token_time.timestamp() + int(expires_in) - 300
                 except (TypeError, ValueError, AttributeError):
                     continue
+                if expire_at <= time.time():
+                    logger.debug("【企微图文】宿主 access_token 已过期（余量至 %s），放弃复用",
+                                 datetime.fromtimestamp(expire_at).strftime("%H:%M:%S"))
+                    continue
                 logger.debug("【企微图文】复用宿主 access_token（余量至 %s）",
                              datetime.fromtimestamp(expire_at).strftime("%H:%M:%S"))
                 return token, expire_at
@@ -684,24 +688,31 @@ class _WeComMpnews:
         content, filename, mime = self._download_image(image_url)
         if not content:
             return None
-        data = self._upload_thumb_request(filename, content, mime)
-        if data is None:
-            return None
-        if data.get("errcode") != 0:
-            if data.get("errcode") in (42001, 40014):
-                # token 失效：清缓存、强制重取、重试一次
-                logger.warning("【企微图文】缩略图上传 access_token 失效（errcode=%s），重取后重试",
-                               data.get("errcode"))
-                self._invalidate_token()
-                if not self._fetch_access_token():
-                    return None
-                data = self._upload_thumb_request(filename, content, mime)
-                if data is None:
-                    return None
-            if data.get("errcode") != 0:
+        # 传输层无响应（HTTP None）与 token 失效（42001/40014）都重取 token 后
+        # 重试一次，避免过期 token 反复使用或请求无响应时直接放弃。
+        data = None
+        for attempt in range(2):
+            data = self._upload_thumb_request(filename, content, mime)
+            if data is not None and data.get("errcode") == 0:
+                break
+            if data is not None and data.get("errcode") not in (42001, 40014):
                 logger.error("【企微图文】上传缩略图素材失败：errcode=%s, errmsg=%s",
                              data.get("errcode"), data.get("errmsg"))
                 return None
+            logger.warning(
+                "【企微图文】缩略图上传失败（%s），重取 access_token 后重试",
+                "HTTP None" if data is None else f"errcode={data.get('errcode')}",
+            )
+            self._invalidate_token()
+            if not self._fetch_access_token():
+                return None
+        if data is None or data.get("errcode") != 0:
+            if data is None:
+                logger.error("【企微图文】上传缩略图素材失败：HTTP None")
+            else:
+                logger.error("【企微图文】上传缩略图素材失败：errcode=%s, errmsg=%s",
+                             data.get("errcode"), data.get("errmsg"))
+            return None
         media_id = data.get("media_id")
         if not media_id:
             return None
@@ -925,9 +936,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.5：今日上新推送改为以猫眼「上线首日」为准，TMDB 日期仅作兜底。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.6：修复企微图文 token 过期复用、上传无响应重试与推送结果日志。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.5"
+    plugin_version = "3.0.6"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -2268,6 +2279,7 @@ class MaoyanDianYing(_PluginBase):
                 images = []
                 lines = []
                 batch = []
+                sent_ok = False
                 for hit in pending:
                     name = hit.get("name", "")
                     platform = hit.get("platform", "")
@@ -2296,25 +2308,29 @@ class MaoyanDianYing(_PluginBase):
                         else:
                             images.append(TmdbHelper.image_url(poster_path))
                     if len(lines) >= 8:
-                        self.__notify(
+                        sent_ok = self.__notify(
                             mtype=mtype,
                             title="猫眼发现今日上新",
                             text="\n".join(lines),
                             image=random.choice(images) if images else None,
                             items=batch,
-                        )
+                        ) or sent_ok
                         lines = []
                         images = []
                         batch = []
                 if lines:
-                    self.__notify(
+                    sent_ok = self.__notify(
                         mtype=mtype,
                         title="猫眼发现今日上新",
                         text="\n".join(lines),
                         image=random.choice(images) if images else None,
                         items=batch,
-                    )
-                logger.info("【今日上新提醒】推送完成，今日上新 %d 条", len(pending))
+                    ) or sent_ok
+                if sent_ok:
+                    logger.info("【今日上新提醒】推送完成，今日上新 %d 条", len(pending))
+                else:
+                    logger.warning("【今日上新提醒】推送失败：企微图文与宿主渠道均未送达，今日上新 %d 条",
+                                   len(pending))
                 # 推送成功后记录（手动也会写入，避免随后自动刷新重复推送）
                 for hit in pending:
                     sent_ids.add(_send_id(hit))
@@ -2379,28 +2395,29 @@ class MaoyanDianYing(_PluginBase):
             logger.error("【今日上新提醒】执行失败: %s", e)
 
     def __notify(self, mtype, title: str, text: str, image: Optional[str] = None,
-                 items: Optional[List[dict]] = None) -> None:
+                 items: Optional[List[dict]] = None) -> bool:
         """统一通知出口。
 
         - mpnews 开关关闭：走原有宿主通知链，行为与历史版本完全一致。
         - mpnews 开关开启：改用企业微信 mpnews 图文消息推送（正文含演员/详情/状态）；
           失败时自动回退宿主通知链，确保开启该开关不会导致通知丢失。
+
+        :return: 是否至少有一条渠道报告发送成功，供调用方记录真实送达情况。
         """
         if not self._mpnews_enabled:
-            self.post_message(mtype=mtype, title=title, text=text, image=image)
-            return
+            return bool(self.post_message(mtype=mtype, title=title, text=text, image=image))
         try:
             conf = self.__get_wechat_conf()
             if conf is not None:
                 sender = _WeComMpnews(self, conf)
                 if sender.send(title=title, text=text, image=image, items=items):
-                    return
+                    return True
                 logger.warning("【企微图文】推送未成功，回退宿主通知渠道")
             else:
                 logger.warning("【企微图文】未找到可用的企业微信渠道配置，回退宿主通知渠道")
         except Exception as e:
             logger.error("【企微图文】发送异常，回退宿主通知渠道: %s", e)
-        self.post_message(mtype=mtype, title=title, text=text, image=image)
+        return bool(self.post_message(mtype=mtype, title=title, text=text, image=image))
 
     def __build_notify_item(self, item: dict) -> dict:
         """把榜单条目补齐为通知所需的富信息（全部优先命中插件缓存，缺失才联网）。
