@@ -17,14 +17,14 @@
     "name": "猫眼发现",
     "description": "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。",
     "labels": "榜单,剧集,猫眼",
-    "version": "3.0.6",
+    "version": "3.0.7",
     "icon": "Moviepilot_A.png",
     "author": "irab",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
-      "v3.0.6": "修复企微图文 token 过期复用、上传无响应重试与推送结果日志"
+      "v3.0.7": "新增官方 App 发现页推荐榜单"
     }
   },
   "MaoyanTop30": {
