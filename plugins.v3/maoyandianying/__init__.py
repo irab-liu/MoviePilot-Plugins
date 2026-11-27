@@ -24,7 +24,9 @@ from app.modules.themoviedb.tmdbapi import TmdbApi
 from app.plugins import _PluginBase
 from app.sdk.events import Event, eventmanager
 from app.sdk.logging import logger
-from app.schemas.types import EventType, MediaType
+from app.sdk.media import MediaInfo
+from app.schemas import RecommendMediaSource, RecommendSourceEventData, Response
+from app.schemas.types import ChainEventType, EventType, MediaSource, MediaType
 
 def _create_meta_info(title: str):
     """创建 MoviePilot V3 MetaInfo，兼容 TMDB chain/cache。"""
@@ -310,7 +312,16 @@ class TmdbHelper:
 
     @staticmethod
     def get_poster_url(poster_path: str) -> str:
-        """将 TMDB 海报相对路径转换为 MP 代理 URL；空路径返回空字符串。"""
+        """将 TMDB 海报相对路径转换为 MP 代理 URL；空路径返回空字符串。
+
+        返回形如 ``/api/v1/system/img/1?imgurl=...`` 的相对路径：
+        - Web 端：浏览器基于当前 origin 解析 + 自动携带 Cookie，代理才能过鉴权；
+        - 移动端：Image.network / 官方 App 的 NativeMediaArtwork 只认 http(s)
+          绝对 URL，拿到相对路径会直接加载失败。
+
+        因此移动端场景统一调用 :meth:`extract_poster_url` 把本方法的结果
+        还原成完整图片 URL，两处用途相反，切勿混用。
+        """
         if not poster_path:
             return ""
         if poster_path.startswith("http"):
@@ -319,6 +330,24 @@ class TmdbHelper:
                 return f"/api/v1/system/img/1?imgurl={poster_path}"
             return poster_path
         return f"/api/v1/system/img/1?imgurl={TmdbHelper.image_url(poster_path)}"
+
+    @staticmethod
+    def extract_poster_url(poster: str) -> str:
+        """把缓存里的海报字段还原为移动端可直连的完整 http(s) 图片 URL。
+
+        缓存 rows 的 ``poster`` 字段由 :meth:`get_poster_url` 写入，可能为：
+        - 相对代理路径 ``/api/v1/system/img/1?imgurl=...`` → 提取 imgurl 参数值；
+        - 已是 http(s) 绝对地址（非 TMDB 图床原样透传）→ 原样返回；
+        - 空串 → 返回空串。
+
+        注意：``get_poster_url`` 拼接 imgurl 时未做 URL 编码，因此这里不能
+        用 urllib.parse 解析 query，只能按 ``imgurl=`` 字面量切分一次。
+        """
+        if not poster:
+            return ""
+        if "imgurl=" in poster:
+            return poster.split("imgurl=", 1)[1]
+        return poster
 
 
 class _WeComMpnews:
@@ -936,9 +965,9 @@ class MaoyanDianYing(_PluginBase):
     """猫眼发现插件主类"""
 
     plugin_name = "猫眼发现"
-    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。v3.0.6：修复企微图文 token 过期复用、上传无响应重试与推送结果日志。"
+    plugin_desc = "猫眼网播【电视剧+网剧】热度 TOP30 剧集订阅情况，一键订阅。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "3.0.6"
+    plugin_version = "3.0.7"
     plugin_author = "irab"
     author_url = "https://github.com/irab-liu"
     plugin_config_prefix = "maoyandingyue_"
@@ -1454,6 +1483,14 @@ class MaoyanDianYing(_PluginBase):
                 "description": "清理所有插件产生的缓存数据（TMDB、猫眼抓取数据等），不清理定时任务数据和提醒数据",
                 "auth": "bear",
             },
+            {
+                "path": "/recommend_tv",
+                "endpoint": self.recommend_tv,
+                "methods": ["GET"],
+                "summary": "发现页推荐榜单",
+                "description": "返回猫眼网播热度榜 MediaInfo 列表，供 MoviePilot App 发现页插件推荐模块渲染",
+                "auth": "bear",
+            },
         ]
 
     @staticmethod
@@ -1842,12 +1879,9 @@ class MaoyanDianYing(_PluginBase):
                 # _auto_refresh/run_once 均不落盘，订阅/入库后必须实时判定，
                 # 否则订阅后刷新仍显示「未添加订阅」，按钮不变灰。
                 status = self._check_media_status(tmdbid, name, season)
-                # 海报：缓存存的是相对代理 /api/v1/system/img/1?imgurl=...，
-                # 移动端 VuetifyImageView 用 Image.network 无法解析相对路径，
-                # 这里还原成完整图片 URL 供直连加载。
-                poster = str(item.get("poster", "") or "")
-                if "imgurl=" in poster:
-                    poster = poster.split("imgurl=", 1)[1]
+                # 海报：缓存存的是相对代理路径，移动端 Image.network 无法
+                # 解析，还原成完整 URL 供直连加载（见 extract_poster_url 注释）。
+                poster = TmdbHelper.extract_poster_url(str(item.get("poster", "") or ""))
 
                 info_children = [
                     {
@@ -2007,6 +2041,94 @@ class MaoyanDianYing(_PluginBase):
                 "order": 10,
             }
         ]
+
+    # ─── 官方 App 发现页推荐榜单 ───
+    # 契约见 MoviePilot-App docs/plugin-development-guide.md 与后端
+    # app/api/endpoints/recommend.py：
+    # - 宿主广播 ChainEventType.RecommendSource，插件回填
+    #   RecommendSourceEventData.extra_sources；
+    # - GET /api/v1/recommend/source 把 extra_sources 透传给 App；
+    # - App 端据此在「发现页-管理发现模块」生成 plugin_recommend:<api_path>
+    #   动态模块，默认开启，并请求 api_path 渲染榜单。
+    #
+    # 注意事项：
+    # 1. api_path 必须使用受控相对路径（如 plugin/<PluginId>/<path>），App
+    #    端 RecommendSourceEndpoint.media 会严格校验并拼成 /api/v1/...，
+    #    禁止带 scheme、主机、反斜杠、路径穿越；不要带 ?apikey=（App 会带
+    #    鉴权请求，后端 get_api 里该端点已声明 auth=bear）。
+    # 2. type 字段会被 App 用于判断卡片类型：含「剧」按电视剧渲染。这里
+    #    固定「电视剧」，App 模块副标题显示为「插件推荐 · 电视剧」。
+    # 3. 返回数据必须是 MoviePilot MediaInfo 列表（或 {success, data} 包
+    #    封）；App 只渲染带真实 media_id/tmdb_id 的条目（才能跳原生详情页），
+    #    未识别 TMDB 的条目会在 App 端被静默丢弃。
+    # 4. 插件停用时不回填 extra_sources，App 端刷新后该模块自动消失。
+    @eventmanager.register(ChainEventType.RecommendSource)
+    def recommend_source(self, event: Event):
+        """向 MoviePilot App 发现页注册「猫眼发现」推荐模块。"""
+        if not self.get_state():
+            return
+        event_data: RecommendSourceEventData = event.event_data
+        source = RecommendMediaSource(
+            name="猫眼发现",
+            api_path=f"plugin/MaoyanDianYing/recommend_tv",
+            type="电视剧",
+        )
+        if not event_data.extra_sources:
+            event_data.extra_sources = [source]
+        else:
+            event_data.extra_sources.append(source)
+
+    def recommend_tv(self, page: int = 1, count: int = 30) -> Response[List[MediaInfo]]:
+        """发现页推荐榜单数据源：返回猫眼网播热度榜的 MediaInfo 列表。
+
+        设计约定：
+        - 只读缓存、不触发抓取（与 get_cache 一致），避免发现页下拉刷新时
+          打满猫眼接口；
+        - 只输出已识别 TMDB 身份的条目——官方 App 发现页卡片要求可跳原生
+          详情页，media_id 缺失的条目会整卡不渲染，返回了也是浪费带宽；
+        - 海报用 extract_poster_url 还原成完整 URL（App 图片组件只认
+          http/https）；
+        - 分页按 page/count 切片，App 端发现页榜单支持自动翻页。
+        """
+        if not self.get_state():
+            return Response(success=True, data=[])
+        cached = super().get_data(self._cache_key) or {}
+        rows = cached.get("rows") or [] if isinstance(cached, dict) else []
+        if not rows:
+            return Response(success=True, data=[])
+
+        medias: List[MediaInfo] = []
+        for item in rows:
+            name = str(item.get("name", "") or "").strip()
+            tmdbid = int(item.get("tmdbid", 0) or 0)
+            if not name or not tmdbid:
+                continue
+            season = int(item.get("season", 0) or 0)
+            # 海报同 get_page：还原成完整 URL（官方 App 图片组件只认 http/https）
+            poster = TmdbHelper.extract_poster_url(str(item.get("poster", "") or ""))
+            overview_parts = []
+            platform = str(item.get("platform", "") or "").strip()
+            heat = item.get("heat", 0)
+            plays = str(item.get("plays", "") or "").strip()
+            if platform:
+                overview_parts.append(f"平台：{platform}")
+            if heat:
+                overview_parts.append(f"热度：{heat}")
+            if plays:
+                overview_parts.append(f"播放：{plays}")
+            medias.append(MediaInfo(
+                type=MediaType.TV,
+                media_source=MediaSource.TMDB,
+                title=name,
+                media_id=str(tmdbid),
+                tmdb_id=tmdbid,
+                season=season or None,
+                poster_path=poster or None,
+                overview=" · ".join(overview_parts) or None,
+            ))
+        # 分页切片：page 从 1 起，count 下限 1，越界返回空列表（App 停止翻页）
+        start = (max(page, 1) - 1) * max(count, 1)
+        return Response(success=True, data=medias[start:start + max(count, 1)])
 
     def stop_service(self) -> None:
         """标记插件停用；定时任务由 MoviePilot 根据 ``get_service`` 统一移除。"""
